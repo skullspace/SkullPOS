@@ -11,23 +11,38 @@ import Button from '@mui/material/Button';
 import Tooltip from '@mui/material/Tooltip';
 import MenuItem from '@mui/material/MenuItem';
 
+import { Link } from 'react-router-dom';
+
+
+import api from '../../api';
+
+import Cookies from 'universal-cookie';
+
 import Logo from '../../Logo.js';
 
 const pages = ['Dashboard', 'IMS', 'POS'];
-const settings = ['Profile', 'Account', 'Dashboard', 'Logout'];
-
-const user = {
-    name: 'John Doe',
-    email: 'john.Doe@skullspace.ca',
-    avatar: '/static/images/avatar/2.jpg',
-};
+const settings = ['Profile', 'Logout'];
 
 const HeaderComp = () => {
+
 
     // get selected page from the URL
     var selectedPage = window.location.pathname.split('/')[1];
     if (selectedPage === '') { selectedPage = 'Dashboard'; }
     console.log(selectedPage);
+
+    const cookies = new Cookies();
+
+    const user = cookies.get('user');
+
+    var avatar;
+
+    if (cookies.get('user')) {
+        avatar = <Avatar alt={user.first_name + ' ' + user.last_name} src="/static/images/avatar/2.jpg" />
+    } else {
+        avatar = <Avatar alt="u" src="/static/images/avatar/2.jpg" />
+    }
+
 
     const [anchorElNav, setAnchorElNav] = React.useState(null);
     const [anchorElUser, setAnchorElUser] = React.useState(null);
@@ -100,10 +115,10 @@ const HeaderComp = () => {
                             ))}
                         </Box>
 
-                        <Box sx={{ flexGrow: 0 }}>
+                         <Box sx={{ flexGrow: 0 }}>
                             <Tooltip title="Open settings">
                                 <IconButton onClick={handleOpenUserMenu} sx={{ p: 0 }}>
-                                    <Avatar alt={user.name} src={user.avatar} />
+                                   {avatar}
                                 </IconButton>
                             </Tooltip>
                             <Menu
@@ -123,7 +138,8 @@ const HeaderComp = () => {
                                 onClose={handleCloseUserMenu}
                             >
                                 {settings.map((setting) => (
-                                    <MenuItem key={setting} onClick={handleCloseUserMenu}>
+                                    <MenuItem
+                                    component='a' href={'/' + setting} key={setting} onClick={handleCloseUserMenu}>
                                         <Typography textAlign="center">{setting}</Typography>
                                     </MenuItem>
                                 ))}
