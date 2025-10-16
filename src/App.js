@@ -1,59 +1,68 @@
-//import logo from './logo.svg';
-import './App.css';
-import React from 'react';
-import { BrowserRouter as Router, Route, Routes as Switch } from 'react-router-dom';
+import { useAppwrite } from "./api";
+import { useMemo, useState, useEffect } from "react";
+import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 
-//import Dashboard from './components/Dashboard/Dashboard';
-//import Auth from './components/Auth/Auth';
-import IMS from './components/ims/IMS';
-import Home from './components/Home/Home';
-//import Settings from './components/Settings/Settings';
-//import POS from './components/POS/POS';
+// comp imports
+import Login from "./components/login";
+import Register from "./components/register";
+import POS from "./components/pos/pos";
 
-import HeaderComp from './components/Header/HeaderComp';
-import FooterComp from './components/Footer/FooterComp';
-import Login from './components/login/Login';
-import Logout from './components/login/logout';
+export default function App() {
+    const { client, account, logout } = useAppwrite();
 
-import { ThemeProvider, createTheme } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
-
-import Cookies from 'universal-cookie';
-
-const darkTheme = createTheme({
-    palette: {
-        mode: 'dark',
-    },
-});
-
-function App() {
-
-    // if not on the login screen and no JWT token is stored in the local storage, redirect to the login screen
-    const cookies = new Cookies();
-    if (window.location.pathname !== '/login' && !cookies.get('jwtToken')) {
-        window.location.href = '/login';
+    const route = window.location.pathname;
+    console.log(route);
+    if (route === "/") {
+        window.location.href = "/pos";
     }
 
+    useEffect(() => {
+
+        // For all other routes, verify account state
+        account
+            .get()
+            .then((acct) => {
+                // If an account object is returned and has an email -> go to POS
+                if (acct && acct.email) {
+                    if (route === "/login" || route === "/register") {
+                        return account
+                            .get()
+                            .then((acct) => {
+                                if (acct && acct.email) {
+                                    return window.location.href = "/pos";
+                                }
+                            });
+                    }
+                    else return;
+                }
+
+                let loginPage = route === "/login" || route === "/register"
+
+                // If account exists but no email, force logout and redirect to login
+                if (acct && !acct.email && !loginPage) {
+                    console.log("no email, logging out");
+                    logout();
+                    return window.location.href = "/login";
+                }
+
+                // If no account info, redirect to login
+                return window.location.href = "/login";
+            })
+            .catch((err) => {
+                console.log(err)
+                if (!(route === "/login" || route === "/register")) {
+                    return window.location.href = "/login";
+                }
+            });
+    }, [account, logout, route]);
 
     return (
-
-        <ThemeProvider theme={darkTheme}>
-            <CssBaseline />
-            <HeaderComp />
-            <Router>
-                <Switch>
-                    <Route path='/ims' element={<IMS />} />
-                    <Route path='/' element={<Home />} />
-                    <Route path='/login' element={<Login />} />
-                    <Route path='/logout' element={<Logout />} />
-
-                </Switch>
-            </Router>
-            <FooterComp />
-
-        </ThemeProvider>
-
+        <Router>
+            <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route path="/pos" element={<POS />} />
+            </Routes>
+        </Router>
     );
 }
-
-export default App;
