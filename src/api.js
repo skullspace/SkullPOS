@@ -1,7 +1,7 @@
 import { Client as Appwrite, Databases, Account, ID } from 'appwrite';
 
 import { useMemo, useState, useEffect, useCallback } from 'react';
-import { data } from 'react-router-dom';
+
 
 // db id 67c9ffd9003d68236514
 // items collection id 67c9ffe6001c17071bb7
@@ -53,7 +53,7 @@ export function useAppwrite() {
     const [categories, setCategories] = useState([]);
     const [items, setItems] = useState([]);
     const [data, setData] = useState(null);
-    const [events, setEvents] = useState(null);
+    //const [events, setEvents] = useState(null);
 
     const client = useMemo(() => createClient(), []);
     const databases = useMemo(() => new Databases(client), [client]);
@@ -101,17 +101,17 @@ export function useAppwrite() {
         }
     }, [databases]);
 
-    const refreshEvents = useCallback(async () => {
-        try {
-            const data = await databases.listDocuments({
-                databaseId: config.databases.data.id,
-                collectionId: config.databases.data.collections.events
-            });
-            setEvents(data.documents || []);
-        } catch (err) {
-            console.error('error getting events', err);
-        }
-    }, [databases]);
+    // const refreshEvents = useCallback(async () => {
+    //     try {
+    //         const data = await databases.listDocuments({
+    //             databaseId: config.databases.data.id,
+    //             collectionId: config.databases.data.collections.events
+    //         });
+    //         setEvents(data.documents || []);
+    //     } catch (err) {
+    //         console.error('error getting events', err);
+    //     }
+    // }, [databases]);
 
     useEffect(() => {
 
@@ -131,7 +131,7 @@ export function useAppwrite() {
             }
         })();
 
-    }, [account, client, refreshCategories, refreshItems, refreshData, refreshEvents]);
+    }, [account, client, refreshCategories, refreshItems, refreshData, /*refreshEvents*/]);
 
 
 

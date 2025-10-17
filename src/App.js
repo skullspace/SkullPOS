@@ -1,5 +1,5 @@
 import { useAppwrite } from "./api";
-import { useMemo, useState, useEffect } from "react";
+import { useEffect } from "react";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 
 // comp imports
@@ -8,7 +8,7 @@ import Register from "./components/register";
 import POS from "./components/pos/pos";
 
 export default function App() {
-    const { client, account, logout } = useAppwrite();
+    const { account, logout } = useAppwrite();
 
     const route = window.location.pathname;
     console.log(route);
