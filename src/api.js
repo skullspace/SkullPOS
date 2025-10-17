@@ -185,6 +185,7 @@ export function useAppwrite() {
         settings: data,
         login,
         logout,
-        register
+        register,
+        uniqueId: ID.unique
     };
 }

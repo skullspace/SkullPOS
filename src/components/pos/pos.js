@@ -1,7 +1,7 @@
 /* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useState, useEffect } from "react";
-import { Box, Button } from "@mui/joy";
+import { Box, Button, Modal } from "@mui/joy";
 import { useAppwrite } from "../../api";
 
 const POS = () => {
@@ -16,6 +16,7 @@ const POS = () => {
         refreshItems,
         refreshData,
         settings,
+        uniqueId
     } = useAppwrite();
 
     const member_discount = settings ? settings.member_discount : 0;
@@ -36,6 +37,9 @@ const POS = () => {
     const [discount, setDiscount] = useState(0);
     const [total, setTotal] = useState(0);
     const [member_discount_applied, setMemberDiscountApplied] = useState(false);
+    const [checkoutLoading, setCheckoutLoading] = useState(false);
+    const [transactionId, setTransactionId] = useState(null);
+    const [cashModalOpen, setCashModalOpen] = useState(false);
 
     const calculateTotal = () => {
         let newTotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
@@ -93,12 +97,84 @@ const POS = () => {
         setCart([]);
     }
 
-    function checkout() {
+    async function checkout() {
+        /*
+Transactions
+    stripe_id
+    items
+    cost
+    status
+    tip
+    event
+    discount
+    discount_reason
+    payment_method
+*/
         // create transaction in appwrite
+        console.log(cart)
+        const transaction = {
+            items: JSON.stringify(cart),
+            payment_due: total,
+            payment_method: paymentMethod,
+            tip: 0,
+            event: null,
+            discount,
+            discount_reason: member_discount_applied ? "member discount" : "none",
+            status: "pending",
+            testing: true
+        };
+        console.log("creating transaction", transaction);
+        const document = await databases.createDocument(
+            config.databases.bar.id,
+            config.databases.bar.collections.transactions,
+            uniqueId(),
+            transaction
+        );
+
+        console.log("transaction created", document);
+        setTransactionId(document.$id);
+
+
         // process payment with stripe using useStripe hook
-        // if cash, calculate change due
+
+
+        // if cash, open modal to enter amount received and calculate change due
+        if (paymentMethod === "cash") {
+            setCashModalOpen(true);
+            return;
+        }
+
         // on success clear cart and show success message with transaction details such as tip and change due if cash
         // on failure show error message
+    }
+
+    function handleCashPayment() {
+        // calculate change due
+        const amountReceivedCents = Math.round(amountReceived * 100);
+        if (amountReceivedCents < total) {
+            setCheckoutError("Amount received is less than total");
+            return;
+        }
+        const change = amountReceivedCents - total;
+        console.log("change due", change);
+        setChangeDue(change);
+        setCheckoutError("");
+        setCheckoutSuccess(true);
+        clearCart();
+        setPaymentMethod(null);
+        setAmountReceived(0);
+
+        // update transaction status to completed and add change due
+        databases.updateDocument(
+            config.databases.bar.id,
+            config.databases.bar.collections.transactions,
+            transactionId,
+            {
+                status: "complete",
+            }
+        );
+
+        // show success message with change due
     }
 
     useEffect(() => {
@@ -224,7 +300,7 @@ const POS = () => {
                         <Box sx={{ mt: 2 }}>
                             {(() => {
 
-                                return <h3>Subtotal: {formatCAD(total * 100)}</h3>;
+                                return <h3>Subtotal: {formatCAD(total)}</h3>;
                             })()}
                         </Box>
                     )}
@@ -248,10 +324,41 @@ const POS = () => {
                             Cash
                         </Button>
                     </Box>
+                    <Button
+                        color="primary"
+                        variant="solid"
+                        fullWidth
+                        sx={{ mt: 2 }}
+                        onClick={checkout}
+                        disabled={cart.length === 0}
+                    >
+                        Checkout
+                    </Button>
                 </Box>
 
             </Box>
-        </Box >
+            {/* Modals for cash payment  */}
+            <Modal open={cashModalOpen} onClose={() => setCashModalOpen(false)}>
+                <Box sx={{ p: 2 }}>
+                    {/* show error if amount received is less than total */}
+                    {checkoutError && <p style={{ color: 'red' }}>{checkoutError}</p>}
+                    <h3>Cash Payment</h3>
+                    <p>Enter Amount Received:</p>
+                    <input
+                        type="number"
+                        value={amountReceived}
+                        onChange={(e) => setAmountReceived(e.target.value)}
+                    />
+                    <Button onClick={handleCashPayment}>Submit</Button>
+                </Box>
+            </Modal>
+            <Modal open={checkoutSuccess} onClose={() => setCheckoutSuccess(false)}>
+                <Box sx={{ p: 2 }}>
+                    {changeDue > 0 && <p>Change Due: {formatCAD(changeDue)}</p>}
+                    <h3>Checkout Successful</h3>
+                </Box>
+            </Modal>
+        </Box>
     );
 };
 
