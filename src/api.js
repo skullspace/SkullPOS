@@ -1,4 +1,4 @@
-import { Client as Appwrite, Databases, Account, ID } from 'appwrite';
+import { Client as Appwrite, Databases, Account, ID, Functions } from 'appwrite';
 
 import { useMemo, useState, useEffect, useCallback } from 'react';
 
@@ -22,7 +22,7 @@ Transactions
 
 const config = {
     endpoint: 'https://api.cloud.shotty.tech/v1',
-    project: '67c9ff7a0013c21e2b40',
+    project: '68f2ac7b00002e7563a8',
     databases: {
         bar: {
             id: '67c9ffd9003d68236514',
@@ -44,8 +44,10 @@ const config = {
 }
 
 function createClient() {
+    // add dev key for local dev
+    const devKey = '719ab6c6002897c096e2dbedf29a0e737f45e8175563bd6d2b6ceb3c5fe0b9f23e8fda3da5c8eb030ec7241d680904f32ae01ae447991e186f1bf1c784ce7fac5356d1d6e5c5a38e1c1e4ac2bb1ea199a739155f1879b37d40e15c12cb59466372f8fdc192a4adac5af7a4af3fd6c92ecd4ddee6b1fa0f49ee0fe84507872afb';
     const client = new Appwrite();
-    client.setEndpoint(config.endpoint).setProject(config.project);
+    client.setEndpoint(config.endpoint).setProject(config.project).setDevKey(devKey);
     return client;
 }
 
@@ -112,6 +114,20 @@ export function useAppwrite() {
     //         console.error('error getting events', err);
     //     }
     // }, [databases]);
+
+
+    // call function to generate connection token from strip (appwrite function id:68f2904a00171e8b0266)
+
+    const functions = new Functions(client);
+    const generateStripeConnectionToken = useCallback(async () => {
+        try {
+            const response = await functions.createExecution({ functionId: '68f2904a00171e8b0266' });
+            const data = JSON.parse(response.responseBody);
+            return data.secret;
+        } catch (error) {
+            console.error('Error generating Stripe connection token:', error);
+        }
+    }, [client]);
 
     useEffect(() => {
 
@@ -186,6 +202,7 @@ export function useAppwrite() {
         login,
         logout,
         register,
-        uniqueId: ID.unique
+        uniqueId: ID.unique,
+        generateStripeConnectionToken
     };
 }

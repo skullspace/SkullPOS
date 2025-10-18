@@ -11,7 +11,6 @@ export default function App() {
     const { account, logout } = useAppwrite();
 
     const route = window.location.pathname;
-    console.log(route);
     if (route === "/") {
         window.location.href = "/pos";
     }
@@ -40,13 +39,14 @@ export default function App() {
 
                 // If account exists but no email, force logout and redirect to login
                 if (acct && !acct.email && !loginPage) {
-                    console.log("no email, logging out");
                     logout();
                     return window.location.href = "/login";
                 }
 
-                // If no account info, redirect to login
-                return window.location.href = "/login";
+
+                if (!loginPage) {
+                    return window.location.href = "/login";
+                }
             })
             .catch((err) => {
                 console.log(err)

@@ -15,7 +15,7 @@ const Login = () => {
             await login(email, password); // Replace with your Appwrite login logic
             setError('');
             alert('Login successful!');
-            navigate('/');
+            navigate('/pos');
         } catch (err) {
             setError(err.message || 'Login failed');
         }

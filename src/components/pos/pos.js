@@ -2,7 +2,9 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useState, useEffect } from "react";
 import { Box, Button, Modal } from "@mui/joy";
+import { FormControl, InputLabel, Select, MenuItem } from "@mui/material";
 import { useAppwrite } from "../../api";
+import { useStripe } from "../../stripe";
 
 const POS = () => {
     const {
@@ -18,6 +20,17 @@ const POS = () => {
         settings,
         uniqueId
     } = useAppwrite();
+
+    const {
+        stripeToken,
+        terminals,
+        getTerminals,
+        selectedTerminal,
+        setSelectedTerminal,
+        disconnectReader,
+        chargeCard
+    } = useStripe();
+
 
     const member_discount = settings ? settings.member_discount : 0;
 
@@ -41,6 +54,7 @@ const POS = () => {
     const [transactionId, setTransactionId] = useState(null);
     const [cashModalOpen, setCashModalOpen] = useState(false);
 
+
     const calculateTotal = () => {
         let newTotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
         if (member_discount_applied) {
@@ -63,7 +77,6 @@ const POS = () => {
     };
 
     function addItemToCart(item) {
-        console.log("adding item to cart", item);
         const existingItem = cart.find((cartItem) => cartItem.$id === item.$id);
         if (existingItem) {
             setCart(
@@ -94,12 +107,14 @@ const POS = () => {
     }
 
     function clearCart() {
+        setMemberDiscountApplied(false);
+        setDiscount(0);
         setCart([]);
     }
 
     async function checkout() {
         /*
-Transactions
+    Transactions
     stripe_id
     items
     cost
@@ -109,9 +124,8 @@ Transactions
     discount
     discount_reason
     payment_method
-*/
+    */
         // create transaction in appwrite
-        console.log(cart)
         const transaction = {
             items: JSON.stringify(cart),
             payment_due: total,
@@ -123,7 +137,6 @@ Transactions
             status: "pending",
             testing: true
         };
-        console.log("creating transaction", transaction);
         const document = await databases.createDocument(
             config.databases.bar.id,
             config.databases.bar.collections.transactions,
@@ -131,21 +144,18 @@ Transactions
             transaction
         );
 
-        console.log("transaction created", document);
         setTransactionId(document.$id);
 
-
-        // process payment with stripe using useStripe hook
-
-
-        // if cash, open modal to enter amount received and calculate change due
         if (paymentMethod === "cash") {
             setCashModalOpen(true);
             return;
         }
+        if (paymentMethod === "stripe") {
+            console.log("handling card payment");
+            handleCardPayment();
+        }
 
-        // on success clear cart and show success message with transaction details such as tip and change due if cash
-        // on failure show error message
+
     }
 
     function handleCashPayment() {
@@ -156,7 +166,6 @@ Transactions
             return;
         }
         const change = amountReceivedCents - total;
-        console.log("change due", change);
         setChangeDue(change);
         setCheckoutError("");
         setCheckoutSuccess(true);
@@ -164,7 +173,6 @@ Transactions
         setPaymentMethod(null);
         setAmountReceived(0);
 
-        // update transaction status to completed and add change due
         databases.updateDocument(
             config.databases.bar.id,
             config.databases.bar.collections.transactions,
@@ -173,8 +181,38 @@ Transactions
                 status: "complete",
             }
         );
+    }
 
-        // show success message with change due
+    function handleCardPayment() {
+        if (!stripeToken) {
+            console.error('Stripe token is not available');
+            return;
+        }
+        // process card payment with stripe
+        console.log("processing card payment with stripe token", stripeToken);
+        console.log(total)
+        chargeCard(total).then(() => {
+
+            // on success
+            setCheckoutSuccess(true);
+            clearCart();
+            setPaymentMethod(null);
+
+
+
+            databases.updateDocument(
+                config.databases.bar.id,
+                config.databases.bar.collections.transactions,
+                transactionId,
+                {
+                    status: "complete",
+                }
+            );
+        }).catch((error) => {
+            console.error('Error processing card payment:', error);
+
+            setCheckoutError("Error processing card payment");
+        });
     }
 
     useEffect(() => {
@@ -186,7 +224,6 @@ Transactions
         refreshItems();
         refreshData();
 
-        console.log(items);
     }, [
         categories.length,
         items.length,
@@ -209,6 +246,22 @@ Transactions
                 alignContent: "flex-start",
                 alignItems: "flex-start"
             }}>
+
+                {/* dropdown to select terminal */}
+                <FormControl fullWidth>
+                    <InputLabel id="terminal-select-label">Select Terminal</InputLabel>
+                    <Select
+                        labelId="terminal-select-label"
+                        value={selectedTerminal}
+                        onChange={(e) => setSelectedTerminal(e.target.value)}
+                    >
+                        {terminals.map((terminal) => (
+                            <MenuItem key={terminal.id} value={terminal}>
+                                {terminal.label}
+                            </MenuItem>
+                        ))}
+                    </Select>
+                </FormControl>
 
                 {categories.map((category) => (
                     <Box key={category.$id} sx={{ mb: 4 }}>
@@ -305,15 +358,15 @@ Transactions
                         </Box>
                     )}
                     <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.5 }}>
-                        <Button variant="outlined" onClick={applyMemberDiscount}>
+                        <Button variant={member_discount_applied ? 'solid' : 'outlined'} onClick={applyMemberDiscount}>
                             Apply Skull Discount
                         </Button>
                         <Button variant="outlined" onClick={clearCart}>
                             Clear Cart
                         </Button>
                         <Button
-                            variant={paymentMethod === 'card' ? 'solid' : 'outlined'}
-                            onClick={() => setPaymentMethod('card')}
+                            variant={paymentMethod === 'stripe' ? 'solid' : 'outlined'}
+                            onClick={() => setPaymentMethod('stripe')}
                         >
                             Card
                         </Button>
@@ -352,10 +405,17 @@ Transactions
                     <Button onClick={handleCashPayment}>Submit</Button>
                 </Box>
             </Modal>
-            <Modal open={checkoutSuccess} onClose={() => setCheckoutSuccess(false)}>
+            <Modal open={checkoutSuccess} onClose={() => { setCheckoutSuccess(false); setChangeDue(0); setAmountReceived(0); }}>
                 <Box sx={{ p: 2 }}>
                     {changeDue > 0 && <p>Change Due: {formatCAD(changeDue)}</p>}
                     <h3>Checkout Successful</h3>
+                </Box>
+            </Modal>
+            {/* Modals for failed transactions */}
+            <Modal open={checkoutError} onClose={() => setCheckoutError(false)}>
+                <Box sx={{ p: 2 }}>
+                    <h3>Checkout Failed</h3>
+                    <p>{checkoutError}</p>
                 </Box>
             </Modal>
         </Box>
