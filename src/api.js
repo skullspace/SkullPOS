@@ -203,6 +203,7 @@ export function useAppwrite() {
         logout,
         register,
         uniqueId: ID.unique,
-        generateStripeConnectionToken
+        generateStripeConnectionToken,
+        functions
     };
 }

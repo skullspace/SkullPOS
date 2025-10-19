@@ -113,6 +113,10 @@ const POS = () => {
     }
 
     async function checkout() {
+        if (!paymentMethod) {
+            setCheckoutError("Please select a payment method");
+            return;
+        }
         /*
     Transactions
     stripe_id
@@ -133,10 +137,11 @@ const POS = () => {
             tip: 0,
             event: null,
             discount,
-            discount_reason: member_discount_applied ? "member discount" : "none",
+            discount_reason: member_discount_applied ? "member_discount" : "",
             status: "pending",
             testing: true
         };
+
         const document = await databases.createDocument(
             config.databases.bar.id,
             config.databases.bar.collections.transactions,
@@ -144,21 +149,25 @@ const POS = () => {
             transaction
         );
 
+        console.log("Transaction created:", document.$id);
         setTransactionId(document.$id);
+        console.log("Current Transaction ID:", transactionId);
 
         if (paymentMethod === "cash") {
             setCashModalOpen(true);
             return;
         }
         if (paymentMethod === "stripe") {
+            console.log(transactionId)
             console.log("handling card payment");
-            handleCardPayment();
+            handleCardPayment(document.$id);
         }
 
 
     }
 
     function handleCashPayment() {
+        setCashModalOpen(false)
         // calculate change due
         const amountReceivedCents = Math.round(amountReceived * 100);
         if (amountReceivedCents < total) {
@@ -172,18 +181,18 @@ const POS = () => {
         clearCart();
         setPaymentMethod(null);
         setAmountReceived(0);
-
-        databases.updateDocument(
-            config.databases.bar.id,
-            config.databases.bar.collections.transactions,
-            transactionId,
-            {
+        console.log(transactionId)
+        databases.updateDocument({
+            databaseId: config.databases.bar.id,
+            collectionId: config.databases.bar.collections.transactions,
+            documentId: transactionId,
+            data: {
                 status: "complete",
             }
-        );
+        });
     }
 
-    function handleCardPayment() {
+    function handleCardPayment(transaction) {
         if (!stripeToken) {
             console.error('Stripe token is not available');
             return;
@@ -191,23 +200,23 @@ const POS = () => {
         // process card payment with stripe
         console.log("processing card payment with stripe token", stripeToken);
         console.log(total)
-        chargeCard(total).then(() => {
+        chargeCard(total).then((result) => {
+            console.log("Charge successful:", result.amount_details.tip.amount);
+            console.log(transaction);
 
-            // on success
+            databases.updateDocument({
+                databaseId: config.databases.bar.id,
+                collectionId: config.databases.bar.collections.transactions,
+                documentId: transaction,
+                data: {
+                    status: "complete",
+                    tip: parseInt(result.amount_details.tip.amount)
+                }
+            });
             setCheckoutSuccess(true);
             clearCart();
             setPaymentMethod(null);
 
-
-
-            databases.updateDocument(
-                config.databases.bar.id,
-                config.databases.bar.collections.transactions,
-                transactionId,
-                {
-                    status: "complete",
-                }
-            );
         }).catch((error) => {
             console.error('Error processing card payment:', error);
 

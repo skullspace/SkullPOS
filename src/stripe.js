@@ -1,12 +1,11 @@
-import { Appwrite } from 'appwrite';
-import { useAppwrite } from './api';
-import { useMemo, useState, useEffect, useCallback, useRef, use } from 'react';
-import { loadStripeTerminal } from '@stripe/terminal-js';
-
+import { Appwrite } from "appwrite";
+import { useAppwrite } from "./api";
+import { useMemo, useState, useEffect, useCallback, useRef, use } from "react";
+import { loadStripeTerminal } from "@stripe/terminal-js";
 
 export function useStripe() {
     // call appwrite function : 68f2904a00171e8b0266
-    const { generateStripeConnectionToken } = useAppwrite();
+    const { generateStripeConnectionToken, functions } = useAppwrite();
 
     const [stripeToken, setStripeToken] = useState(null);
     const [terminals, setTerminals] = useState([]);
@@ -15,7 +14,6 @@ export function useStripe() {
 
     const terminal = useRef(null);
 
-
     async function fetchStripeToken() {
         try {
             const token = await generateStripeConnectionToken();
@@ -23,7 +21,7 @@ export function useStripe() {
             setStripeToken(token);
             return token;
         } catch (error) {
-            console.error('Error fetching Stripe token:', error);
+            console.error("Error fetching Stripe token:", error);
             return null;
         }
     }
@@ -32,32 +30,30 @@ export function useStripe() {
         return fetchStripeToken();
     }
 
-
-
-
-
-
     async function getTerminals() {
-
         try {
             const config = {
-                simulated: false, location: "tml_GO9HoQxw7phAmY"
-            }
-            const discoverResult = await terminal.current.discoverReaders(config);
+                simulated: false,
+                location: "tml_GO9HoQxw7phAmY",
+            };
+            const discoverResult = await terminal.current.discoverReaders(
+                config
+            );
             if (discoverResult.error) {
-                console.log('Failed to discover: ', discoverResult.error);
+                console.log("Failed to discover: ", discoverResult.error);
             } else if (discoverResult.discoveredReaders.length === 0) {
-                console.log('No available readers.');
+                console.log("No available readers.");
             } else {
-                console.log('Discovered readers: ', discoverResult.discoveredReaders);
+                console.log(
+                    "Discovered readers: ",
+                    discoverResult.discoveredReaders
+                );
                 setTerminals(discoverResult.discoveredReaders);
             }
-
         } catch (error) {
-            console.error('Error fetching terminals:', error);
+            console.error("Error fetching terminals:", error);
         }
     }
-
 
     function unexpectedDisconnect() {
         console.log("Reader disconnected unexpectedly");
@@ -66,15 +62,14 @@ export function useStripe() {
         getTerminals();
     }
 
-
     async function initializeTerminal() {
         const StripeTerminal = await loadStripeTerminal();
-        console.log(await fetchStripeToken())
+        console.log(await fetchStripeToken());
         terminal.current = StripeTerminal.create({
             onFetchConnectionToken: fetchStripeToken,
             onUnexpectedReaderDisconnect: unexpectedDisconnect,
         });
-    };
+    }
 
     useEffect(() => {
         fetchStripeToken();
@@ -86,18 +81,19 @@ export function useStripe() {
         if (stripeToken) {
             getTerminals();
         }
-
     }, [stripeToken]);
 
     useEffect(() => {
         async function connectToReader() {
             console.log("Selected Terminal:", selectedTerminal);
 
-            const connectResult = await terminal.current.connectReader(selectedTerminal);
+            const connectResult = await terminal.current.connectReader(
+                selectedTerminal
+            );
             if (connectResult.error) {
-                console.log('Failed to connect:', connectResult.error);
+                console.log("Failed to connect:", connectResult.error);
             } else {
-                console.log('Connected to reader:', connectResult.reader.label);
+                console.log("Connected to reader:", connectResult.reader.label);
             }
         }
         if (selectedTerminal) {
@@ -113,17 +109,73 @@ export function useStripe() {
         }
     }
 
+    const getChargeID = useCallback(
+        async (amountCents) => {
+            try {
+                const response = await functions.createExecution({
+                    functionId: "68f3c860003da00f14d8",
+                    body: JSON.stringify({ amount: amountCents }),
+                });
+                const data = JSON.parse(response.responseBody);
+                return data.secret;
+            } catch (error) {
+                console.error("Error generating Stripe intent:", error);
+            }
+        },
+        [functions]
+    );
+
     function chargeCard(amountCents) {
         return new Promise(async (resolve, reject) => {
-            try {
-                const result = await terminal.current.processPayment({
-                    amount: amountCents,
-                    currency: 'cad',
-                });
-                resolve(result);
-            } catch (error) {
-                console.error('Error charging card:', error);
-                reject(error);
+            const chargeID = await getChargeID(amountCents);
+            const collectResult = await terminal.current.collectPaymentMethod(
+                chargeID,
+                {
+                    config_override: {
+                        enable_customer_cancellation: true,
+                        update_payment_intent: true,
+                    },
+                }
+            );
+
+            if (collectResult.error) {
+                console.error(
+                    "Error collecting payment method:",
+                    collectResult.error
+                );
+                reject(collectResult.error);
+                return;
+            }
+            const processResult = await terminal.current.processPayment(
+                collectResult.paymentIntent
+            );
+
+            if (processResult.error) {
+                console.error("Error processing payment:", processResult.error);
+                reject(processResult.error);
+                return;
+            }
+
+            const finalPaymentIntent = processResult.paymentIntent;
+
+            if (finalPaymentIntent.status === "requires_capture") {
+                console.log(
+                    "Payment authorized, awaiting server-side capture."
+                );
+                resolve(finalPaymentIntent);
+            } else if (finalPaymentIntent.status === "succeeded") {
+                console.log("Payment succeeded and captured!");
+                resolve(finalPaymentIntent);
+            } else {
+                console.error(
+                    "Payment Intent ended in an unexpected status:",
+                    finalPaymentIntent.status
+                );
+                reject(
+                    new Error(
+                        `Unexpected PI status: ${finalPaymentIntent.status}`
+                    )
+                );
             }
         });
     }
@@ -135,8 +187,6 @@ export function useStripe() {
         selectedTerminal,
         setSelectedTerminal,
         disconnectReader,
-        chargeCard
+        chargeCard,
     };
 }
-
-
