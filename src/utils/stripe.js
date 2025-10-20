@@ -4,215 +4,342 @@ import { useMemo, useState, useEffect, useCallback, useRef, use } from "react";
 import { loadStripeTerminal } from "@stripe/terminal-js";
 
 export function useStripe() {
-    // call appwrite function : 68f2904a00171e8b0266
-    const { generateStripeConnectionToken, functions } = useAppwrite();
+	// call appwrite function : 68f2904a00171e8b0266
+	const { generateStripeConnectionToken, functions } = useAppwrite();
 
-    const [stripeToken, setStripeToken] = useState(null);
-    const [terminals, setTerminals] = useState([]);
+	const [stripeToken, setStripeToken] = useState(null);
+	const [terminals, setTerminals] = useState([]);
 
-    const [selectedTerminal, setSelectedTerminal] = useState("");
-    const [terminalReady, setTerminalReady] = useState(false);
+	const [refreshingTerminals, setRefreshingTerminals] = useState(false);
 
-    const [stripeAlert, setStripeAlert] = useState({ active: false, message: "", type: "info" });
+	const [selectedTerminal, setSelectedTerminal] = useState("");
+	const [terminalReady, setTerminalReady] = useState(false);
 
-    const [transactionInProgress, setTransactionInProgress] = useState(false);
+	const [chargeID, setChargeID] = useState(null);
+	const [intentID, setIntentID] = useState(null);
 
-    const terminal = useRef(null);
+	const [stripeAlert, setStripeAlert] = useState({
+		active: false,
+		message: "",
+		type: "info",
+	});
 
-    async function fetchStripeToken() {
-        try {
-            console.log("Fetching Stripe token...");
-            const token = await generateStripeConnectionToken();
-            setStripeToken(token);
-            return token;
-        } catch (error) {
-            console.error("Error fetching Stripe token:", error);
-            setStripeAlert({ active: true, message: "Error fetching Stripe token", type: "error" });
-            return null;
-        }
-    }
+	const [transactionInProgress, setTransactionInProgress] = useState(false);
 
-    async function getTerminals() {
-        try {
-            const config = {
-                simulated: false,
-                location: "tml_GO9HoQxw7phAmY",
-            };
-            const discoverResult = await terminal.current.discoverReaders(
-                config
-            );
-            console.log("Discovered readers:", discoverResult.discoveredReaders);
-            if (discoverResult.error) {
-                console.log("Failed to discover: ", discoverResult.error);
-                setStripeAlert({ active: true, message: "Failed to discover readers", type: "error" });
-            } else if (discoverResult.discoveredReaders.length === 0) {
-                console.log("No available readers.");
-                setStripeAlert({ active: true, message: "No available readers", type: "error" });
-            } else {
-                const onlineReaders = discoverResult.discoveredReaders.filter(
-                    (reader) => reader.status === "online"
-                );
-                setTerminals(onlineReaders);
-                if (onlineReaders.length === 1) {
-                    setSelectedTerminal(onlineReaders[0]);
-                }
-            }
-        } catch (error) {
-            console.error("Error fetching terminals:", error);
-            setStripeAlert({ active: true, message: "Error fetching terminals", type: "error" });
-        }
-    }
+	const terminal = useRef(null);
 
-    function unexpectedDisconnect() {
-        console.log("Reader disconnected unexpectedly");
-        // Handle the unexpected disconnection
-        fetchStripeToken();
-        getTerminals();
-    }
+	const fetchStripeToken = useCallback(async () => {
+		try {
+			const token = await generateStripeConnectionToken();
 
-    async function initializeTerminal() {
-        fetchStripeToken()
-        const StripeTerminal = await loadStripeTerminal();
-        terminal.current = StripeTerminal.create({
-            onFetchConnectionToken: fetchStripeToken,
-            onUnexpectedReaderDisconnect: unexpectedDisconnect,
-        });
-    }
+			setStripeToken(token);
+			return token;
+		} catch (error) {
+			console.error("Error fetching Stripe token:", error);
+			setStripeAlert({
+				active: true,
+				message: "Error fetching Stripe token",
+				type: "error",
+			});
+			return null;
+		}
+	}, [generateStripeConnectionToken]);
 
-    function disconnectReader() {
-        if (terminal.current) {
-            terminal.current.disconnectReader().then((result) => {
-                setStripeAlert({ active: true, message: "Reader disconnected", type: "error" });
-            });
-        }
-    }
+	const getTerminals = useCallback(async () => {
+		setStripeAlert({
+			active: true,
+			message: "Connecting to Stripe Terminal...",
+			type: "info",
+			autoExpire: false,
+		});
+		try {
+			const config = {
+				simulated: false,
+				location: "tml_GO9HoQxw7phAmY",
+			};
+			const discoverResult = await terminal.current.discoverReaders(
+				config
+			);
+			if (discoverResult.error) {
+				setStripeAlert({
+					active: true,
+					message: "Failed to discover readers",
+					type: "error",
+				});
+			} else if (discoverResult.discoveredReaders.length === 0) {
+				setStripeAlert({
+					active: true,
+					message: "No available readers",
+					type: "error",
+				});
+			} else {
+				const onlineReaders = discoverResult.discoveredReaders.filter(
+					(reader) => reader.status === "online"
+				);
 
-    const getChargeID = useCallback(
-        async (amountCents) => {
-            try {
-                const response = await functions.createExecution({
-                    functionId: "68f3c860003da00f14d8",
-                    body: JSON.stringify({ amount: parseInt(amountCents) }),
-                });
-                console.log(response.responseBody);
-                const data = JSON.parse(response.responseBody);
-                return data.secret;
-            } catch (error) {
-                console.error("Error generating Stripe intent:", error);
+				if (onlineReaders.length === 0) {
+					setRefreshingTerminals(true);
+					setStripeAlert({
+						active: true,
+						message: "No online readers available, will retry soon",
+						type: "error",
+					});
+					return;
+				}
+				setTerminals(onlineReaders);
+				if (onlineReaders.length === 1) {
+					setSelectedTerminal(onlineReaders[0]);
+				}
+			}
+		} catch (error) {
+			console.error("Error fetching terminals:", error);
+			setStripeAlert({
+				active: true,
+				message: "Error fetching terminals",
+				type: "error",
+			});
+		}
+	}, [
+		terminal,
+		setStripeAlert,
+		setRefreshingTerminals,
+		setTerminals,
+		setSelectedTerminal,
+	]);
 
-                setStripeAlert({ active: true, message: "Error generating Stripe intent", type: "error" });
-            }
-        },
-        [functions]
-    );
+	const unexpectedDisconnect = useCallback(() => {
+		console.error("Reader disconnected unexpectedly");
+		// Handle the unexpected disconnection
+		getTerminals();
+	}, [getTerminals]);
 
-    function chargeCard(amountCents) {
-        return new Promise(async (resolve, reject) => {
-            const chargeID = await getChargeID(amountCents);
-            const collectResult = await terminal.current.collectPaymentMethod(
-                chargeID,
-                {
-                    config_override: {
-                        enable_customer_cancellation: true,
-                        update_payment_intent: true,
-                    },
-                }
-            );
+	const initializeTerminal = useCallback(async () => {
+		setRefreshingTerminals(false);
+		setStripeAlert({
+			active: true,
+			message: "Connecting to Stripe Terminal...",
+			type: "info",
+			autoExpire: false,
+		});
+		fetchStripeToken();
 
-            if (collectResult.error) {
-                console.error(
-                    "Error collecting payment method:",
-                    collectResult.error
-                );
-                reject(collectResult.error);
-                return;
-            }
-            const processResult = await terminal.current.processPayment(
-                collectResult.paymentIntent
-            );
+		const StripeTerminal = await loadStripeTerminal();
+		terminal.current = StripeTerminal.create({
+			onFetchConnectionToken: fetchStripeToken,
+			onUnexpectedReaderDisconnect: unexpectedDisconnect,
+		});
+	}, [fetchStripeToken, unexpectedDisconnect]);
 
-            if (processResult.error) {
-                console.error("Error processing payment:", processResult.error);
-                reject(processResult.error);
-                return;
-            }
+	function disconnectReader() {
+		if (terminal.current) {
+			terminal.current.disconnectReader().then((result) => {
+				setRefreshingTerminals(true);
+				setStripeAlert({
+					active: true,
+					message: "Reader disconnected",
+					type: "error",
+				});
+			});
+		}
+	}
 
-            const finalPaymentIntent = processResult.paymentIntent;
+	const getChargeID = useCallback(
+		async (amountCents) => {
+			try {
+				const response = await functions.createExecution({
+					functionId: "68f3c860003da00f14d8",
+					body: JSON.stringify({ amount: parseInt(amountCents) }),
+				});
+				const data = JSON.parse(response.responseBody);
+				console.log("Generated Charge ID:", data);
 
-            if (finalPaymentIntent.status === "requires_capture") {
-                resolve(finalPaymentIntent);
-            } else if (finalPaymentIntent.status === "succeeded") {
-                resolve(finalPaymentIntent);
-            } else {
-                console.error(
-                    "Payment Intent ended in an unexpected status:",
-                    finalPaymentIntent.status
-                );
-                reject(
-                    new Error(
-                        `Unexpected PI status: ${finalPaymentIntent.status}`
-                    )
-                );
-            }
-        });
-    }
+				setIntentID(data.intent.id);
+				console.log("Generated Intent ID:", data.intent.id);
+				return data.intent.client_secret;
+			} catch (error) {
+				console.error("Error generating Stripe intent:", error);
 
-    useEffect(() => {
-        initializeTerminal();
-    }, []);
+				setStripeAlert({
+					active: true,
+					message: "Error generating Stripe intent",
+					type: "error",
+				});
+			}
+		},
+		[functions]
+	);
 
+	useEffect(() => {
+		console.log("Current Charge ID:", stripeToken);
+	}, [stripeToken]);
 
+	const handleCancelStripePayment = useCallback(async () => {
+		if (!chargeID) return;
+		try {
+			await functions.createExecution({
+				functionId: "68f6272500160b48ee44",
+				body: JSON.stringify({ intent: intentID }),
+			});
+			setStripeAlert({
+				active: true,
+				message: "Stripe payment cancelled",
+				type: "success",
+			});
+		} catch (error) {
+			console.error("Error cancelling Stripe payment:", error);
+			setStripeAlert({
+				active: true,
+				message: "Error cancelling Stripe payment",
+				type: "error",
+			});
+		}
+	}, [chargeID, functions, intentID]);
 
-    useEffect(() => {
-        if (stripeToken) {
-            getTerminals();
-        }
-    }, [stripeToken]);
+	const stopTransactionInProgress = useCallback(() => {
+		terminal.current.cancelCollectPaymentMethod();
 
-    useEffect(() => {
-        async function connectToReader() {
-            const connectResult = await terminal.current.connectReader(
-                selectedTerminal
-            );
-            if (connectResult.error) {
-                console.log("Failed to connect:", connectResult.error);
-                setStripeAlert({ active: true, message: "Failed to connect to reader", type: "error" });
-            } else {
-                console.log("Connected to reader:", connectResult.reader.label);
-                setStripeAlert({ active: true, message: `Connected to reader: ${connectResult.reader.label}`, type: "success" });
-                setTerminalReady(true);
-            }
-        }
-        if (selectedTerminal) {
-            connectToReader();
-        }
-    }, [selectedTerminal]);
+		setTransactionInProgress(false);
+	}, []);
 
-    useEffect(() => {
-        console.log("Stripe Alert:", stripeAlert);
-        if (stripeAlert.active) {
-            setTimeout(() => {
-                const { message, type } = stripeAlert;
-                setStripeAlert({ active: false, message, type });
-            }, 5000);
-        }
-    }, [stripeAlert]);
+	function chargeCard(amountCents, retrying = false) {
+		return new Promise(async (resolve, reject) => {
+			let localChargeID;
+			if (!retrying) {
+				localChargeID = await getChargeID(amountCents);
+				setChargeID(localChargeID);
+			} else {
+				localChargeID = chargeID;
+			}
+			console.log("Charge ID:", localChargeID);
+			const collectResult = await terminal.current.collectPaymentMethod(
+				localChargeID,
+				{
+					config_override: {
+						enable_customer_cancellation: true,
+						update_payment_intent: true,
+					},
+				}
+			);
 
-    return {
-        stripeToken,
-        terminals,
-        getTerminals,
-        selectedTerminal,
-        setSelectedTerminal,
-        disconnectReader,
-        chargeCard,
-        terminalReady,
-        setTerminalReady,
-        terminal: terminal.current,
-        stripeAlert,
-        setStripeAlert,
-        transactionInProgress,
-        setTransactionInProgress,
-        initializeTerminal
-    };
+			if (collectResult.error) {
+				console.error(
+					"Error collecting payment method:",
+					collectResult.error
+				);
+				reject(collectResult.error);
+				return;
+			}
+			const processResult = await terminal.current.processPayment(
+				collectResult.paymentIntent
+			);
+
+			if (processResult.error) {
+				console.error("Error processing payment:", processResult.error);
+				reject(processResult.error);
+				return;
+			}
+
+			const finalPaymentIntent = processResult.paymentIntent;
+
+			if (finalPaymentIntent.status === "requires_capture") {
+				resolve(finalPaymentIntent);
+			} else if (finalPaymentIntent.status === "succeeded") {
+				resolve(finalPaymentIntent);
+			} else {
+				console.error(
+					"Payment Intent ended in an unexpected status:",
+					finalPaymentIntent.status
+				);
+				reject(
+					new Error(
+						`Unexpected PI status: ${finalPaymentIntent.status}`
+					)
+				);
+			}
+		});
+	}
+
+	useEffect(() => {
+		initializeTerminal();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
+	useEffect(() => {
+		if (stripeToken) {
+			getTerminals();
+		}
+	}, [getTerminals, stripeToken]);
+
+	useEffect(() => {
+		async function connectToReader() {
+			const connectResult = await terminal.current.connectReader(
+				selectedTerminal
+			);
+			if (connectResult.error) {
+				console.error(
+					"Failed to connect to reader:",
+					connectResult.error
+				);
+				setStripeAlert({
+					active: true,
+					message: "Failed to connect to reader",
+					type: "error",
+				});
+				setRefreshingTerminals(true);
+			} else {
+				setRefreshingTerminals(false);
+				setStripeAlert({
+					active: true,
+					message: `Connected to reader: ${connectResult.reader.label}`,
+					type: "success",
+				});
+				setTerminalReady(true);
+			}
+		}
+		if (selectedTerminal) {
+			connectToReader();
+		}
+	}, [selectedTerminal]);
+
+	useEffect(() => {
+		if (stripeAlert.active) {
+			if (stripeAlert.autoExpire === false) return;
+			setTimeout(() => {
+				const { message, type } = stripeAlert;
+
+				setStripeAlert({ active: false, message, type });
+			}, 5000);
+		}
+	}, [stripeAlert]);
+
+	// retry fetching terminals every minute if none are available
+	useEffect(() => {
+		const interval = setInterval(() => {
+			if (!terminals || terminals.length === 0) {
+				getTerminals();
+			}
+		}, 30000);
+
+		return () => clearInterval(interval);
+	}, [terminals, refreshingTerminals]);
+
+	return {
+		stripeToken,
+		terminals,
+		getTerminals,
+		selectedTerminal,
+		setSelectedTerminal,
+		disconnectReader,
+		chargeCard,
+		terminalReady,
+		setTerminalReady,
+		terminal: terminal.current,
+		stripeAlert,
+		setStripeAlert,
+		transactionInProgress,
+		setTransactionInProgress,
+		initializeTerminal,
+		handleCancelStripePayment,
+		stopTransactionInProgress,
+	};
 }

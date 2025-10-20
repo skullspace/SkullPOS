@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Button, IconButton } from "@mui/joy";
+import { Box, Button, IconButton } from "@mui/material";
 import {
     FormControl,
     InputLabel,
@@ -20,6 +20,8 @@ const Cart = ({
     applyMemberDiscount,
     clearCart,
     removeItemFromCart,
+    onIncrement,
+    onDecrement,
     total,
     terminalReady,
     paymentMethod,
@@ -32,13 +34,13 @@ const Cart = ({
     return (
         <Box
             sx={{
-                width: "20vw",
+                width: "25vw",
                 minWidth: 240,
                 maxWidth: "30%",
                 p: 2,
                 display: "flex",
                 flexDirection: "column",
-                height: "95%",
+                height: "100%",
             }}
         >
             {/* dropdown to select terminal */}
@@ -89,6 +91,8 @@ const Cart = ({
                                 key={cartItem.$id}
                                 cartItem={cartItem}
                                 onRemove={removeItemFromCart}
+                                onIncrement={onIncrement}
+                                onDecrement={onDecrement}
                             />
                         ))}
                     </Box>
@@ -114,6 +118,53 @@ const Cart = ({
                 <Box
                     sx={{
                         display: "grid",
+                        gridTemplateColumns: "1fr 1fr 2fr",
+                        mb: 0.5,
+                        gap: 0.5,
+                    }}
+                >
+                    <Button
+                        loadingIndicator="Loading..."
+                        loading={!terminalReady}
+                        startDecorator={<CreditCardIcon fontSize="small" />}
+                        disabled={terminalReady ? false : true}
+                        variant={
+                            paymentMethod === "stripe"
+                                ? "outlined"
+                                : "contained"
+                        }
+                        sx={{ mx: 0.5 }}
+                        onClick={() => setPaymentMethod("stripe")}
+                    >
+                        Card
+                    </Button>
+                    <Button
+                        startDecorator={<MoneyIcon fontSize="small" />}
+                        variant={
+                            paymentMethod === "cash" ? "outlined" : "contained"
+                        }
+                        sx={{ mx: 0.5 }}
+                        onClick={() => setPaymentMethod("cash")}
+                    >
+                        Cash
+                    </Button>
+                    <Button
+                        startDecorator={<MoneyIcon fontSize="small" />}
+                        variant={
+                            member_discount_applied ? "outlined" : "contained"
+                        }
+                        sx={{ mx: 0.5 }}
+                        onClick={() =>
+                            applyMemberDiscount(!member_discount_applied)
+                        }
+                    >
+                        Member Discount
+                    </Button>
+                </Box>
+
+                <Box
+                    sx={{
+                        display: "grid",
                         gridTemplateColumns: "3fr 1fr",
                         gap: 0.5,
                         alignItems: "end",
@@ -127,40 +178,12 @@ const Cart = ({
                             justifyContent: "end",
                         }}
                     >
-                        <Box sx={{ display: "flex", gap: 0.5, mb: 1 }}>
-                            <Button
-                                startDecorator={
-                                    <CreditCardIcon fontSize="small" />
-                                }
-                                disabled={terminalReady ? false : true}
-                                variant={
-                                    paymentMethod === "stripe"
-                                        ? "solid"
-                                        : "outlined"
-                                }
-                                onClick={() => setPaymentMethod("stripe")}
-                            >
-                                Card
-                            </Button>
-                            <Button
-                                startDecorator={<MoneyIcon fontSize="small" />}
-                                variant={
-                                    paymentMethod === "cash"
-                                        ? "solid"
-                                        : "outlined"
-                                }
-                                onClick={() => setPaymentMethod("cash")}
-                            >
-                                Cash
-                            </Button>
-                        </Box>
-
                         {cart.length === 0 ? (
                             <Tooltip title="Cart is empty">
                                 <span>
                                     <Button
                                         color="primary"
-                                        variant="solid"
+                                        variant="contained"
                                         fullWidth
                                         sx={{ mt: 0 }}
                                         onClick={checkout}
@@ -177,7 +200,7 @@ const Cart = ({
                         ) : (
                             <Button
                                 color="primary"
-                                variant="solid"
+                                variant="contained"
                                 fullWidth
                                 sx={{ mt: 0 }}
                                 onClick={checkout}
@@ -189,8 +212,8 @@ const Cart = ({
                     </Box>
 
                     <IconButton
-                        variant="outlined"
-                        color="neutral"
+                        variant="contained"
+                        color="secondary"
                         onClick={clearCart}
                         aria-label="Clear cart"
                         sx={{ mt: 0 }}

@@ -1,5 +1,5 @@
 import React from "react";
-import { Box } from "@mui/joy";
+import { Box } from "@mui/material";
 import Item from "./item";
 const Category = ({ category, items, onAdd }) => {
     const categoryItems = items.filter(
@@ -7,9 +7,9 @@ const Category = ({ category, items, onAdd }) => {
     );
 
     return (
-        <Box key={category.$id} sx={{ mb: 4 }}>
+        <Box key={category.$id} sx={{ mb: 2, mx: 2.5, fontSize: ".75em" }}>
             <h2>{category.name}</h2>
-            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
                 {categoryItems.map((item) => (
                     <Item key={item.$id} item={item} onAdd={onAdd} />
                 ))}
