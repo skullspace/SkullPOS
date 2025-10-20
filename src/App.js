@@ -1,4 +1,4 @@
-import { useAppwrite } from "./api";
+import { useAppwrite } from "./utils/api";
 import { useEffect } from "react";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 

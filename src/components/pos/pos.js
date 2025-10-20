@@ -2,9 +2,22 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useState, useEffect } from "react";
 import { Box, Button, Modal } from "@mui/joy";
-import { FormControl, InputLabel, Select, MenuItem } from "@mui/material";
-import { useAppwrite } from "../../api";
-import { useStripe } from "../../stripe";
+import Cart from "./cart";
+import Modals from "./modals";
+import {
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
+    Alert,
+    Collapse,
+} from "@mui/material";
+import { useAppwrite } from "../../utils/api";
+import Item from "./item";
+import Category from "./category";
+import { formatCAD } from "../../utils/format";
+import { useStripe } from "../../utils/stripe";
+import { type } from "@testing-library/user-event/dist/type";
 
 const POS = () => {
     const {
@@ -18,26 +31,26 @@ const POS = () => {
         refreshItems,
         refreshData,
         settings,
-        uniqueId
+        uniqueId,
     } = useAppwrite();
 
     const {
         stripeToken,
         terminals,
-        getTerminals,
         selectedTerminal,
         setSelectedTerminal,
-        disconnectReader,
-        chargeCard
+        chargeCard,
+        terminalReady,
+        terminal,
+        stripeAlert,
+        setStripeAlert,
+        transactionInProgress,
+        setTransactionInProgress,
     } = useStripe();
-
 
     const member_discount = settings ? settings.member_discount : 0;
 
-    // Helper to format price stored in cents to CAD currency
-    const formatCAD = (cents) => {
-        return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(cents / 100);
-    };
+    // formatCAD is imported from shared utils
 
     const [cart, setCart] = useState([]);
     const [error, setError] = useState("");
@@ -54,9 +67,11 @@ const POS = () => {
     const [transactionId, setTransactionId] = useState(null);
     const [cashModalOpen, setCashModalOpen] = useState(false);
 
-
     const calculateTotal = () => {
-        let newTotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
+        let newTotal = cart.reduce(
+            (acc, item) => acc + item.price * item.quantity,
+            0
+        );
         if (member_discount_applied) {
             const discountAmount = (newTotal * member_discount) / 100;
             setDiscount(discountAmount);
@@ -113,33 +128,22 @@ const POS = () => {
     }
 
     async function checkout() {
+        setTransactionInProgress(true);
         if (!paymentMethod) {
             setCheckoutError("Please select a payment method");
             return;
         }
-        /*
-    Transactions
-    stripe_id
-    items
-    cost
-    status
-    tip
-    event
-    discount
-    discount_reason
-    payment_method
-    */
-        // create transaction in appwrite
+
         const transaction = {
             items: JSON.stringify(cart),
-            payment_due: total,
+            payment_due: parseInt(total),
             payment_method: paymentMethod,
             tip: 0,
             event: null,
-            discount,
+            discount: parseInt(discount),
             discount_reason: member_discount_applied ? "member_discount" : "",
             status: "pending",
-            testing: true
+            testing: true,
         };
 
         const document = await databases.createDocument(
@@ -149,25 +153,20 @@ const POS = () => {
             transaction
         );
 
-        console.log("Transaction created:", document.$id);
         setTransactionId(document.$id);
-        console.log("Current Transaction ID:", transactionId);
 
         if (paymentMethod === "cash") {
             setCashModalOpen(true);
             return;
         }
         if (paymentMethod === "stripe") {
-            console.log(transactionId)
-            console.log("handling card payment");
             handleCardPayment(document.$id);
         }
-
-
     }
 
     function handleCashPayment() {
-        setCashModalOpen(false)
+        setTransactionInProgress(false);
+        setCashModalOpen(false);
         // calculate change due
         const amountReceivedCents = Math.round(amountReceived * 100);
         if (amountReceivedCents < total) {
@@ -181,58 +180,85 @@ const POS = () => {
         clearCart();
         setPaymentMethod(null);
         setAmountReceived(0);
-        console.log(transactionId)
         databases.updateDocument({
             databaseId: config.databases.bar.id,
             collectionId: config.databases.bar.collections.transactions,
             documentId: transactionId,
             data: {
                 status: "complete",
-            }
+            },
         });
     }
 
     function handleCardPayment(transaction) {
         if (!stripeToken) {
-            console.error('Stripe token is not available');
+            console.error("Stripe token is not available");
             return;
         }
         // process card payment with stripe
-        console.log("processing card payment with stripe token", stripeToken);
-        console.log(total)
-        chargeCard(total).then((result) => {
-            console.log("Charge successful:", result.amount_details.tip.amount);
-            console.log(transaction);
+        chargeCard(total)
+            .then((result) => {
+                console.log("Charge successful:", result);
 
-            databases.updateDocument({
-                databaseId: config.databases.bar.id,
-                collectionId: config.databases.bar.collections.transactions,
-                documentId: transaction,
-                data: {
-                    status: "complete",
-                    tip: parseInt(result.amount_details.tip.amount)
-                }
+                databases.updateDocument({
+                    databaseId: config.databases.bar.id,
+                    collectionId: config.databases.bar.collections.transactions,
+                    documentId: transaction,
+                    data: {
+                        status: "complete",
+                        tip: parseInt(result.amount_details.tip.amount),
+                        stripe_id: result.id,
+                    },
+                });
+                setTransactionInProgress(false);
+                setCheckoutSuccess(true);
+                clearCart();
+                setPaymentMethod(null);
+            })
+            .catch((error) => {
+                console.error("Error processing card payment:", error);
+                setTransactionInProgress(false);
+                setCheckoutError("Error processing card payment");
             });
-            setCheckoutSuccess(true);
-            clearCart();
-            setPaymentMethod(null);
-
-        }).catch((error) => {
-            console.error('Error processing card payment:', error);
-
-            setCheckoutError("Error processing card payment");
-        });
     }
 
     useEffect(() => {
         calculateTotal();
-    }, [cart, discount, calculateTotal]);
+        if (terminal && terminalReady) {
+            if (cart.length === 0) terminal.clearReaderDisplay();
+            else {
+                console.log("Updating terminal display with cart items");
+                terminal.setReaderDisplay({
+                    cart: {
+                        line_items: [
+                            ...cart.map((item) => ({
+                                description: item.name,
+                                quantity: item.quantity,
+                                amount: parseInt(item.price) * item.quantity,
+                            })),
+                            ...(member_discount_applied
+                                ? [
+                                    {
+                                        description: "Member Discount",
+                                        quantity: 1,
+                                        amount: -1 * parseInt(discount),
+                                    },
+                                ]
+                                : []),
+                        ],
+                        total: parseInt(total),
+                        currency: "cad",
+                    },
+                    type: "cart",
+                });
+            }
+        }
+    }, [cart, discount, calculateTotal, terminal, terminalReady, total]);
 
     useEffect(() => {
         refreshCategories();
         refreshItems();
         refreshData();
-
     }, [
         categories.length,
         items.length,
@@ -242,57 +268,29 @@ const POS = () => {
     ]);
 
     return (
-        <Box sx={{ display: "flex", height: "100vh", }}>
-            <Box sx={{
-                flex: 1,
-                gap: 10,
-                overflow: "wrap",
-                display: "flex",
-                flexWrap: "wrap",
-                p: 2,
-                height: "95%",
-                overflowY: "auto",
-                alignContent: "flex-start",
-                alignItems: "flex-start"
-            }}>
-
-                {/* dropdown to select terminal */}
-                <FormControl fullWidth>
-                    <InputLabel id="terminal-select-label">Select Terminal</InputLabel>
-                    <Select
-                        labelId="terminal-select-label"
-                        value={selectedTerminal}
-                        onChange={(e) => setSelectedTerminal(e.target.value)}
-                    >
-                        {terminals.map((terminal) => (
-                            <MenuItem key={terminal.id} value={terminal}>
-                                {terminal.label}
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
+        <Box sx={{ display: "flex", height: "100vh" }}>
+            <Box
+                sx={{
+                    flex: 1,
+                    gap: 10,
+                    overflow: "wrap",
+                    display: "flex",
+                    flexWrap: "wrap",
+                    p: 2,
+                    height: "95%",
+                    overflowY: "auto",
+                    alignContent: "flex-start",
+                    alignItems: "flex-start",
+                }}
+            >
 
                 {categories.map((category) => (
-                    <Box key={category.$id} sx={{ mb: 4 }}>
-                        <h2>{category.name}</h2>
-                        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}>
-                            {items
-                                .filter(
-                                    (item) =>
-                                        item.categories.$id === category.$id
-                                )
-                                .map((item) => (
-                                    <Button
-                                        key={item.$id}
-                                        sx={{ height: "15vh", aspectRatio: "1", border: "1px solid", p: 2 }}
-                                        onClick={() => addItemToCart(item)}
-                                    >
-                                        <h3>{item.name}</h3>
-                                        <p>{formatCAD(item.price)}</p>
-                                    </Button>
-                                ))}
-                        </Box>
-                    </Box>
+                    <Category
+                        key={category.$id}
+                        category={category}
+                        items={items}
+                        onAdd={addItemToCart}
+                    />
                 ))}
             </Box>
 
@@ -306,132 +304,67 @@ const POS = () => {
                 }}
             />
 
-            <Box
-                sx={{
-                    width: "20vw",
-                    minWidth: 240,
-                    maxWidth: "30%",
-                    p: 2,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    height: '95%'
-                }}
-            >
-                <Box sx={{ flex: 1, overflow: 'auto' }}>
-                    {//sticky header showing if the member discount is applied
-                        member_discount_applied && (
-                            <Box sx={{ position: 'sticky', top: 0, background: 'background.surface', zIndex: 1, mb: 0, p: 0, borderBottom: '1px solid' }}>
-                                <p>Member discount applied</p>
-                            </Box>
-                        )
+            <Cart
+                cart={cart}
+                formatCAD={formatCAD}
+                member_discount_applied={member_discount_applied}
+                applyMemberDiscount={applyMemberDiscount}
+                clearCart={clearCart}
+                removeItemFromCart={removeItemFromCart}
+                total={total}
+                terminalReady={terminalReady}
+                paymentMethod={paymentMethod}
+                setPaymentMethod={setPaymentMethod}
+                checkout={checkout}
+                checkoutError={checkoutError}
+                setCheckoutError={setCheckoutError}
+                cashModalOpen={cashModalOpen}
+                setCashModalOpen={setCashModalOpen}
+                amountReceived={amountReceived}
+                setAmountReceived={setAmountReceived}
+                handleCashPayment={handleCashPayment}
+                checkoutSuccess={checkoutSuccess}
+                setCheckoutSuccess={setCheckoutSuccess}
+                changeDue={changeDue}
+                setChangeDue={setChangeDue}
+                transactionInProgress={transactionInProgress}
+                terminals={terminals}
+                selectedTerminal={selectedTerminal}
+                setSelectedTerminal={setSelectedTerminal}
+            />
+            <Modals
+                cashModalOpen={cashModalOpen}
+                setCashModalOpen={setCashModalOpen}
+                checkoutSuccess={checkoutSuccess}
+                setCheckoutSuccess={setCheckoutSuccess}
+                checkoutError={checkoutError}
+                setCheckoutError={setCheckoutError}
+                transactionInProgress={transactionInProgress}
+                amountReceived={amountReceived}
+                setAmountReceived={setAmountReceived}
+                handleCashPayment={handleCashPayment}
+                changeDue={changeDue}
+                formatCAD={formatCAD}
+            />
+            <Collapse id="primaryAlert" in={stripeAlert.active}>
+                <Alert
+                    variant="filled"
+                    open={stripeAlert.active}
+                    onClose={() =>
+                        setStripeAlert({
+                            active: false,
+                            message: "",
+                            type: "info",
+                        })
                     }
-                    {cart.length === 0 ? (
-                        <p>The cart is empty</p>
-                    ) : (
-                        <Box>
-                            {cart.map((cartItem) => (
-                                <Box
-                                    key={cartItem.$id}
-                                    sx={{
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        alignItems: "center",
-                                        borderBottom: "1px solid",
-                                        py: 1,
-                                    }}
-                                >
-                                    <Box>
-                                        <h3>{cartItem.name}</h3>
-                                        <p>{formatCAD(cartItem.price)}</p>
-                                        <p>Qty: {cartItem.quantity}</p>
-                                    </Box>
-                                    <Box>
-                                        <Button onClick={() => removeItemFromCart(cartItem.$id)}>
-                                            Remove
-                                        </Button>
-                                    </Box>
-                                </Box>
-                            ))}
-                        </Box>
-                    )}
-                </Box>
-
-                {/* Sticky button grid at bottom */}
-                <Box sx={{ position: 'sticky', bottom: 0, mt: 0, background: 'background.surface', p: 0 }}>
-                    {cart.length > 0 && (
-                        <Box sx={{ mt: 2 }}>
-                            {(() => {
-
-                                return <h3>Subtotal: {formatCAD(total)}</h3>;
-                            })()}
-                        </Box>
-                    )}
-                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.5 }}>
-                        <Button variant={member_discount_applied ? 'solid' : 'outlined'} onClick={applyMemberDiscount}>
-                            Apply Skull Discount
-                        </Button>
-                        <Button variant="outlined" onClick={clearCart}>
-                            Clear Cart
-                        </Button>
-                        <Button
-                            variant={paymentMethod === 'stripe' ? 'solid' : 'outlined'}
-                            onClick={() => setPaymentMethod('stripe')}
-                        >
-                            Card
-                        </Button>
-                        <Button
-                            variant={paymentMethod === 'cash' ? 'solid' : 'outlined'}
-                            onClick={() => setPaymentMethod('cash')}
-                        >
-                            Cash
-                        </Button>
-                    </Box>
-                    <Button
-                        color="primary"
-                        variant="solid"
-                        fullWidth
-                        sx={{ mt: 2 }}
-                        onClick={checkout}
-                        disabled={cart.length === 0}
-                    >
-                        Checkout
-                    </Button>
-                </Box>
-
-            </Box>
-            {/* Modals for cash payment  */}
-            <Modal open={cashModalOpen} onClose={() => setCashModalOpen(false)}>
-                <Box sx={{ p: 2 }}>
-                    {/* show error if amount received is less than total */}
-                    {checkoutError && <p style={{ color: 'red' }}>{checkoutError}</p>}
-                    <h3>Cash Payment</h3>
-                    <p>Enter Amount Received:</p>
-                    <input
-                        type="number"
-                        value={amountReceived}
-                        onChange={(e) => setAmountReceived(e.target.value)}
-                    />
-                    <Button onClick={handleCashPayment}>Submit</Button>
-                </Box>
-            </Modal>
-            <Modal open={checkoutSuccess} onClose={() => { setCheckoutSuccess(false); setChangeDue(0); setAmountReceived(0); }}>
-                <Box sx={{ p: 2 }}>
-                    {changeDue > 0 && <p>Change Due: {formatCAD(changeDue)}</p>}
-                    <h3>Checkout Successful</h3>
-                </Box>
-            </Modal>
-            {/* Modals for failed transactions */}
-            <Modal open={checkoutError} onClose={() => setCheckoutError(false)}>
-                <Box sx={{ p: 2 }}>
-                    <h3>Checkout Failed</h3>
-                    <p>{checkoutError}</p>
-                </Box>
-            </Modal>
+                    severity={stripeAlert.type}
+                >
+                    {stripeAlert.message}
+                </Alert>
+            </Collapse>
         </Box>
     );
 };
 
 export default POS;
 
-// debit/credit brings up a modal for pending transaction for stripe to handle
-// cash brings up a modal to enter amount received and calculates change due

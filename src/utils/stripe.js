@@ -10,24 +10,26 @@ export function useStripe() {
     const [stripeToken, setStripeToken] = useState(null);
     const [terminals, setTerminals] = useState([]);
 
-    const [selectedTerminal, setSelectedTerminal] = useState(null);
+    const [selectedTerminal, setSelectedTerminal] = useState("");
+    const [terminalReady, setTerminalReady] = useState(false);
+
+    const [stripeAlert, setStripeAlert] = useState({ active: false, message: "", type: "info" });
+
+    const [transactionInProgress, setTransactionInProgress] = useState(false);
 
     const terminal = useRef(null);
 
     async function fetchStripeToken() {
         try {
+            console.log("Fetching Stripe token...");
             const token = await generateStripeConnectionToken();
-            console.log("Stripe Token:", token);
             setStripeToken(token);
             return token;
         } catch (error) {
             console.error("Error fetching Stripe token:", error);
+            setStripeAlert({ active: true, message: "Error fetching Stripe token", type: "error" });
             return null;
         }
-    }
-
-    function refreshStripeToken() {
-        return fetchStripeToken();
     }
 
     async function getTerminals() {
@@ -39,19 +41,25 @@ export function useStripe() {
             const discoverResult = await terminal.current.discoverReaders(
                 config
             );
+            console.log("Discovered readers:", discoverResult.discoveredReaders);
             if (discoverResult.error) {
                 console.log("Failed to discover: ", discoverResult.error);
+                setStripeAlert({ active: true, message: "Failed to discover readers", type: "error" });
             } else if (discoverResult.discoveredReaders.length === 0) {
                 console.log("No available readers.");
+                setStripeAlert({ active: true, message: "No available readers", type: "error" });
             } else {
-                console.log(
-                    "Discovered readers: ",
-                    discoverResult.discoveredReaders
+                const onlineReaders = discoverResult.discoveredReaders.filter(
+                    (reader) => reader.status === "online"
                 );
-                setTerminals(discoverResult.discoveredReaders);
+                setTerminals(onlineReaders);
+                if (onlineReaders.length === 1) {
+                    setSelectedTerminal(onlineReaders[0]);
+                }
             }
         } catch (error) {
             console.error("Error fetching terminals:", error);
+            setStripeAlert({ active: true, message: "Error fetching terminals", type: "error" });
         }
     }
 
@@ -63,48 +71,18 @@ export function useStripe() {
     }
 
     async function initializeTerminal() {
+        fetchStripeToken()
         const StripeTerminal = await loadStripeTerminal();
-        console.log(await fetchStripeToken());
         terminal.current = StripeTerminal.create({
             onFetchConnectionToken: fetchStripeToken,
             onUnexpectedReaderDisconnect: unexpectedDisconnect,
         });
     }
 
-    useEffect(() => {
-        fetchStripeToken();
-
-        initializeTerminal();
-    }, []);
-
-    useEffect(() => {
-        if (stripeToken) {
-            getTerminals();
-        }
-    }, [stripeToken]);
-
-    useEffect(() => {
-        async function connectToReader() {
-            console.log("Selected Terminal:", selectedTerminal);
-
-            const connectResult = await terminal.current.connectReader(
-                selectedTerminal
-            );
-            if (connectResult.error) {
-                console.log("Failed to connect:", connectResult.error);
-            } else {
-                console.log("Connected to reader:", connectResult.reader.label);
-            }
-        }
-        if (selectedTerminal) {
-            connectToReader();
-        }
-    }, [selectedTerminal]);
-
     function disconnectReader() {
         if (terminal.current) {
             terminal.current.disconnectReader().then((result) => {
-                console.log("Disconnected from reader:", result);
+                setStripeAlert({ active: true, message: "Reader disconnected", type: "error" });
             });
         }
     }
@@ -114,12 +92,15 @@ export function useStripe() {
             try {
                 const response = await functions.createExecution({
                     functionId: "68f3c860003da00f14d8",
-                    body: JSON.stringify({ amount: amountCents }),
+                    body: JSON.stringify({ amount: parseInt(amountCents) }),
                 });
+                console.log(response.responseBody);
                 const data = JSON.parse(response.responseBody);
                 return data.secret;
             } catch (error) {
                 console.error("Error generating Stripe intent:", error);
+
+                setStripeAlert({ active: true, message: "Error generating Stripe intent", type: "error" });
             }
         },
         [functions]
@@ -159,12 +140,8 @@ export function useStripe() {
             const finalPaymentIntent = processResult.paymentIntent;
 
             if (finalPaymentIntent.status === "requires_capture") {
-                console.log(
-                    "Payment authorized, awaiting server-side capture."
-                );
                 resolve(finalPaymentIntent);
             } else if (finalPaymentIntent.status === "succeeded") {
-                console.log("Payment succeeded and captured!");
                 resolve(finalPaymentIntent);
             } else {
                 console.error(
@@ -180,6 +157,47 @@ export function useStripe() {
         });
     }
 
+    useEffect(() => {
+        initializeTerminal();
+    }, []);
+
+
+
+    useEffect(() => {
+        if (stripeToken) {
+            getTerminals();
+        }
+    }, [stripeToken]);
+
+    useEffect(() => {
+        async function connectToReader() {
+            const connectResult = await terminal.current.connectReader(
+                selectedTerminal
+            );
+            if (connectResult.error) {
+                console.log("Failed to connect:", connectResult.error);
+                setStripeAlert({ active: true, message: "Failed to connect to reader", type: "error" });
+            } else {
+                console.log("Connected to reader:", connectResult.reader.label);
+                setStripeAlert({ active: true, message: `Connected to reader: ${connectResult.reader.label}`, type: "success" });
+                setTerminalReady(true);
+            }
+        }
+        if (selectedTerminal) {
+            connectToReader();
+        }
+    }, [selectedTerminal]);
+
+    useEffect(() => {
+        console.log("Stripe Alert:", stripeAlert);
+        if (stripeAlert.active) {
+            setTimeout(() => {
+                const { message, type } = stripeAlert;
+                setStripeAlert({ active: false, message, type });
+            }, 5000);
+        }
+    }, [stripeAlert]);
+
     return {
         stripeToken,
         terminals,
@@ -188,5 +206,13 @@ export function useStripe() {
         setSelectedTerminal,
         disconnectReader,
         chargeCard,
+        terminalReady,
+        setTerminalReady,
+        terminal: terminal.current,
+        stripeAlert,
+        setStripeAlert,
+        transactionInProgress,
+        setTransactionInProgress,
+        initializeTerminal
     };
 }
