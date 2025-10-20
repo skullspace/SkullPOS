@@ -85,6 +85,45 @@ const POS = () => {
 		});
 	}, []);
 
+	const disableItem = useCallback(
+		(itemId, toEnable = false) => {
+			if (toEnable) {
+				console.log("Enabling item:", itemId);
+
+				databases.updateDocument({
+					databaseId: config.databases.bar.id,
+					collectionId: config.databases.bar.collections.items,
+					documentId: itemId,
+					data: {
+						shown: true,
+					},
+				});
+			} else if (!toEnable) {
+				console.log("Disabling item:", itemId);
+
+				databases.updateDocument({
+					databaseId: config.databases.bar.id,
+					collectionId: config.databases.bar.collections.items,
+					documentId: itemId,
+					data: {
+						shown: false,
+					},
+				});
+			}
+			let itemName =
+				items.find((item) => item.$id === itemId)?.name ||
+				"Unknown Item";
+			setStripeAlert({
+				active: true,
+				message: `Item ${
+					toEnable ? "enabled" : "disabled"
+				}: ${itemName}`,
+				type: "info",
+			});
+		},
+		[items]
+	);
+
 	// Retry a failed checkout using the existing transactionId (do not create a new payment intent)
 	const retryCheckout = () => {
 		if (!transactionId.current) {
@@ -202,6 +241,7 @@ const POS = () => {
 		transactionId.current = document.$id;
 
 		if (paymentMethod === "cash") {
+			setTransactionInProgress(false);
 			setCashModalOpen(true);
 			return;
 		}
@@ -254,6 +294,18 @@ const POS = () => {
 						tip: parseInt(result.amount_details.tip.amount),
 						stripe_id: result.id,
 					},
+				});
+				console.log(result);
+				setStripeAlert({
+					active: true,
+					message:
+						"Payment Successful: " +
+						formatCAD(result.amount) +
+						" Total: " +
+						formatCAD(total) +
+						" + Tip: " +
+						formatCAD(result.amount_details.tip.amount),
+					type: "success",
 				});
 				setTransactionInProgress(false);
 				setCheckoutSuccess(true);
@@ -338,6 +390,7 @@ const POS = () => {
 						category={category}
 						items={items}
 						onAdd={addItemToCart}
+						disableItem={disableItem}
 					/>
 				))}
 			</Box>

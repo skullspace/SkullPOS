@@ -1,6 +1,5 @@
-import { Appwrite } from "appwrite";
 import { useAppwrite } from "./api";
-import { useMemo, useState, useEffect, useCallback, useRef, use } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { loadStripeTerminal } from "@stripe/terminal-js";
 
 export function useStripe() {
@@ -302,14 +301,16 @@ export function useStripe() {
 	}, [selectedTerminal]);
 
 	useEffect(() => {
-		if (stripeAlert.active) {
-			if (stripeAlert.autoExpire === false) return;
-			setTimeout(() => {
-				const { message, type } = stripeAlert;
+		if (!stripeAlert.active) return;
+		if (stripeAlert.autoExpire === false) return;
 
-				setStripeAlert({ active: false, message, type });
-			}, 5000);
-		}
+		const timer = setTimeout(() => {
+			const { message, type } = stripeAlert;
+			setStripeAlert({ active: false, message, type });
+		}, 5000);
+
+		// clear previous timer if alert changes (reset countdown)
+		return () => clearTimeout(timer);
 	}, [stripeAlert]);
 
 	// retry fetching terminals every minute if none are available
@@ -321,7 +322,7 @@ export function useStripe() {
 		}, 30000);
 
 		return () => clearInterval(interval);
-	}, [terminals, refreshingTerminals]);
+	}, [terminals, refreshingTerminals, getTerminals]);
 
 	return {
 		stripeToken,
