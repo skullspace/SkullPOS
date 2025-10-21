@@ -141,12 +141,18 @@ export function useAppwrite() {
 
 	async function login(email, password) {
 		try {
-			await account.get();
+			let login = await account.get();
+			console.log("already logged in", login);
 			throw new Error("Already logged in");
 		} catch (e) {
 			// not logged in, continue
 		}
-		return account.createEmailPasswordSession({ email, password });
+		let newLoging = await account.createEmailPasswordSession({
+			email,
+			password,
+		});
+		console.log("login success", newLoging);
+		return newLoging;
 	}
 
 	async function logout() {
