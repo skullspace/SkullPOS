@@ -126,7 +126,7 @@ export function useAppwrite() {
 
 	// call function to generate connection token from strip (appwrite function id:68f2904a00171e8b0266)
 
-	const functions = new Functions(client);
+	const functions = useMemo(() => new Functions(client), [client]);
 	const generateStripeConnectionToken = useCallback(async () => {
 		try {
 			const response = await functions.createExecution({
@@ -137,7 +137,7 @@ export function useAppwrite() {
 		} catch (error) {
 			console.error("Error generating Stripe connection token:", error);
 		}
-	}, [client]);
+	}, [functions]);
 
 	useEffect(() => {
 		(async () => {
