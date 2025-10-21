@@ -197,8 +197,7 @@ const Cart = ({
 									</Button>
 								</span>
 							</Tooltip>
-						) : // if using stripe and terminal is not ready, disable checkout
-						paymentMethod === "stripe" && !terminalReady ? (
+						) : paymentMethod === "stripe" && !terminalReady ? (
 							<Tooltip title="Terminal not ready">
 								<span>
 									<Button

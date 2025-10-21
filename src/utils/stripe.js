@@ -6,16 +6,14 @@ export function useStripe() {
 	// call appwrite function : 68f2904a00171e8b0266
 	const { generateStripeConnectionToken, functions } = useAppwrite();
 
-	const [stripeToken, setStripeToken] = useState(null);
+	const stripeToken = useRef(null);
 	const [terminals, setTerminals] = useState([]);
-
-	const [refreshingTerminals, setRefreshingTerminals] = useState(false);
 
 	const [selectedTerminal, setSelectedTerminal] = useState("");
 	const [terminalReady, setTerminalReady] = useState(false);
 
-	const [chargeID, setChargeID] = useState(null);
-	const [intentID, setIntentID] = useState(null);
+	const chargeID = useRef(null);
+	const intentID = useRef(null);
 
 	const [stripeAlert, setStripeAlert] = useState({
 		active: false,
@@ -26,12 +24,13 @@ export function useStripe() {
 	const [transactionInProgress, setTransactionInProgress] = useState(false);
 
 	const terminal = useRef(null);
+	const initialized = useRef(false);
 
 	const fetchStripeToken = useCallback(async () => {
 		try {
 			const token = await generateStripeConnectionToken();
 
-			setStripeToken(token);
+			stripeToken.current = token;
 			return token;
 		} catch (error) {
 			console.error("Error fetching Stripe token:", error);
@@ -40,7 +39,7 @@ export function useStripe() {
 				message: "Error fetching Stripe token",
 				type: "error",
 			});
-			return null;
+			return error;
 		}
 	}, [generateStripeConnectionToken]);
 
@@ -77,7 +76,6 @@ export function useStripe() {
 				);
 
 				if (onlineReaders.length === 0) {
-					setRefreshingTerminals(true);
 					setStripeAlert({
 						active: true,
 						message: "No online readers available, will retry soon",
@@ -87,6 +85,9 @@ export function useStripe() {
 				}
 				setTerminals(onlineReaders);
 				if (onlineReaders.length === 1) {
+					console.log(
+						"Auto-selecting the only available online reader"
+					);
 					setSelectedTerminal(onlineReaders[0]);
 				}
 			}
@@ -98,46 +99,60 @@ export function useStripe() {
 				type: "error",
 			});
 		}
-	}, [
-		terminal,
-		setStripeAlert,
-		setRefreshingTerminals,
-		setTerminals,
-		setSelectedTerminal,
-	]);
+	}, [terminal, setStripeAlert, setTerminals, setSelectedTerminal]);
 
-	const unexpectedDisconnect = useCallback(() => {
-		console.error("Reader disconnected unexpectedly");
-		// Handle the unexpected disconnection
-		getTerminals();
-	}, [getTerminals]);
+	const unexpectedDisconnect = useCallback(
+		(err) => {
+			console.log("Stripe token updated:", err);
+			console.error("Reader disconnected unexpectedly");
+			// Handle the unexpected disconnection
+			getTerminals();
+		},
+		[getTerminals]
+	);
 
 	const initializeTerminal = useCallback(async () => {
-		setRefreshingTerminals(false);
+		// prevent double-initialization
+		console.log("initializeTerminal called");
+		if (initialized.current) return;
+		if (terminal.current) {
+			initialized.current = true;
+			return;
+		}
 		setStripeAlert({
 			active: true,
 			message: "Connecting to Stripe Terminal...",
 			type: "info",
 			autoExpire: false,
 		});
-		fetchStripeToken();
+
+		// Fetch an initial token so we can attempt discovery immediately.
+		const token = await fetchStripeToken();
 
 		const StripeTerminal = await loadStripeTerminal();
 		terminal.current = StripeTerminal.create({
 			onFetchConnectionToken: fetchStripeToken,
 			onUnexpectedReaderDisconnect: unexpectedDisconnect,
 		});
-	}, [fetchStripeToken, unexpectedDisconnect]);
+
+		// If we obtained a token, try discovering readers now.
+		if (token) {
+			getTerminals();
+		}
+
+		initialized.current = true;
+	}, [fetchStripeToken, unexpectedDisconnect, getTerminals]);
 
 	function disconnectReader() {
 		if (terminal.current) {
 			terminal.current.disconnectReader().then((result) => {
-				setRefreshingTerminals(true);
 				setStripeAlert({
 					active: true,
 					message: "Reader disconnected",
 					type: "error",
 				});
+				// allow re-initialization after a manual disconnect
+				initialized.current = false;
 			});
 		}
 	}
@@ -150,10 +165,9 @@ export function useStripe() {
 					body: JSON.stringify({ amount: parseInt(amountCents) }),
 				});
 				const data = JSON.parse(response.responseBody);
-				console.log("Generated Charge ID:", data);
 
-				setIntentID(data.intent.id);
-				console.log("Generated Intent ID:", data.intent.id);
+				// store intent id in a ref to avoid unnecessary re-renders
+				intentID.current = data.intent.id;
 				return data.intent.client_secret;
 			} catch (error) {
 				console.error("Error generating Stripe intent:", error);
@@ -168,16 +182,12 @@ export function useStripe() {
 		[functions]
 	);
 
-	useEffect(() => {
-		console.log("Current Charge ID:", stripeToken);
-	}, [stripeToken]);
-
 	const handleCancelStripePayment = useCallback(async () => {
-		if (!chargeID) return;
+		if (!chargeID.current) return;
 		try {
 			await functions.createExecution({
 				functionId: "68f6272500160b48ee44",
-				body: JSON.stringify({ intent: intentID }),
+				body: JSON.stringify({ intent: intentID.current }),
 			});
 			setStripeAlert({
 				active: true,
@@ -192,7 +202,7 @@ export function useStripe() {
 				type: "error",
 			});
 		}
-	}, [chargeID, functions, intentID]);
+	}, [functions, setStripeAlert]);
 
 	const stopTransactionInProgress = useCallback(() => {
 		terminal.current.cancelCollectPaymentMethod();
@@ -201,15 +211,20 @@ export function useStripe() {
 	}, []);
 
 	function chargeCard(amountCents, retrying = false) {
+		if (amountCents <= 50) {
+			return Promise.reject(
+				new Error("Amount must be greater than 50 cents")
+			);
+		}
+
 		return new Promise(async (resolve, reject) => {
 			let localChargeID;
 			if (!retrying) {
 				localChargeID = await getChargeID(amountCents);
-				setChargeID(localChargeID);
+				chargeID.current = localChargeID;
 			} else {
-				localChargeID = chargeID;
+				localChargeID = chargeID.current;
 			}
-			console.log("Charge ID:", localChargeID);
 			const collectResult = await terminal.current.collectPaymentMethod(
 				localChargeID,
 				{
@@ -259,15 +274,10 @@ export function useStripe() {
 	}
 
 	useEffect(() => {
+		console.log("initizing stripe terminal");
 		initializeTerminal();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
-
-	useEffect(() => {
-		if (stripeToken) {
-			getTerminals();
-		}
-	}, [getTerminals, stripeToken]);
 
 	useEffect(() => {
 		async function connectToReader() {
@@ -284,9 +294,9 @@ export function useStripe() {
 					message: "Failed to connect to reader",
 					type: "error",
 				});
-				setRefreshingTerminals(true);
+				initializeTerminal();
 			} else {
-				setRefreshingTerminals(false);
+				console.log("Connected to reader:", connectResult);
 				setStripeAlert({
 					active: true,
 					message: `Connected to reader: ${connectResult.reader.label}`,
@@ -298,7 +308,7 @@ export function useStripe() {
 		if (selectedTerminal) {
 			connectToReader();
 		}
-	}, [selectedTerminal]);
+	}, [selectedTerminal, initializeTerminal]);
 
 	useEffect(() => {
 		if (!stripeAlert.active) return;
@@ -312,17 +322,6 @@ export function useStripe() {
 		// clear previous timer if alert changes (reset countdown)
 		return () => clearTimeout(timer);
 	}, [stripeAlert]);
-
-	// retry fetching terminals every minute if none are available
-	useEffect(() => {
-		const interval = setInterval(() => {
-			if (!terminals || terminals.length === 0) {
-				getTerminals();
-			}
-		}, 30000);
-
-		return () => clearInterval(interval);
-	}, [terminals, refreshingTerminals, getTerminals]);
 
 	return {
 		stripeToken,

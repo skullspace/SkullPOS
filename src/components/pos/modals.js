@@ -99,11 +99,12 @@ const Modals = ({
 						id="checkout-error-title"
 						variant="h6"
 						component="h2"
-						color="error"
 					>
 						Checkout Failed
 					</Typography>
-					<Typography sx={{ mt: 1 }}>{checkoutError}</Typography>
+					<Typography sx={{ mt: 1, whiteSpace: "pre-wrap" }}>
+						{checkoutError}
+					</Typography>
 					<Box
 						sx={{
 							display: "flex",

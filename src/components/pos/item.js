@@ -13,17 +13,19 @@ const Item = ({ item, onAdd, disableItem }) => {
 	const LONG_PRESS_MS = 1000;
 	const [disabled, setDisabled] = React.useState(false);
 
+	React.useEffect(() => {
+		if (item.shown === false) {
+			setDisabled(true);
+		}
+	}, [item.shown]);
+
 	const handlePointerDown = (e) => {
 		longPressTriggered.current = false;
-		// capture the pointer so we still get the up event
 		try {
 			e.currentTarget.setPointerCapture?.(e.pointerId);
 			pointerIdRef.current = e.pointerId;
-		} catch (_) {
-			// ignore if setPointerCapture not supported
-		}
+		} catch (_) {}
 
-		// start the timeout
 		longPressTimeout.current = setTimeout(() => {
 			longPressTriggered.current = true;
 			setDisabled((prev) => {
@@ -39,17 +41,14 @@ const Item = ({ item, onAdd, disableItem }) => {
 			clearTimeout(longPressTimeout.current);
 			longPressTimeout.current = null;
 		}
-		// release pointer capture if we captured it
 		try {
 			if (pointerIdRef.current != null) {
 				e.currentTarget.releasePointerCapture?.(pointerIdRef.current);
 				pointerIdRef.current = null;
 			}
-		} catch (_) {
-			/* ignore */
-		}
+		} catch (_) {}
 	};
-	// Safe background URL: fall back to a bundled image if item has no image id
+
 	const bgUrl = item && item.image ? imgurl(item.image) : "/logo192.png";
 
 	const isDisabled = Boolean(item.disabled) || disabled;
@@ -64,13 +63,11 @@ const Item = ({ item, onAdd, disableItem }) => {
 			onPointerLeave={clearLongPress}
 			onClick={(e) => {
 				if (longPressTriggered.current) {
-					// already handled by long-press
 					longPressTriggered.current = false;
 					e.preventDefault();
 					e.stopPropagation();
 					return;
 				}
-				// if logically disabled, don't perform add
 				if (isDisabled) {
 					e.preventDefault();
 					e.stopPropagation();
@@ -98,7 +95,6 @@ const Item = ({ item, onAdd, disableItem }) => {
 				transition: "transform 120ms ease, box-shadow 120ms ease",
 				position: "relative",
 				textOutline: "5px solid black",
-				/* background moved to pseudo-element so we can blur it without affecting children */
 				"&::before": {
 					content: '""',
 					position: "absolute",
@@ -116,14 +112,12 @@ const Item = ({ item, onAdd, disableItem }) => {
 					transform: "scale(1.2)",
 				},
 				"&::after": {
-					/* dark overlay */
 					content: '""',
 					position: "absolute",
 					inset: 0,
 					background: "rgba(0,0,0,0.45)",
 					zIndex: 1,
 				},
-				/* ensure immediate children render above the overlays */
 				"& > .itemContent": {
 					position: "relative",
 					zIndex: 2,

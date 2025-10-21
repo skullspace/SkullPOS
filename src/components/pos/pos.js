@@ -44,6 +44,7 @@ const POS = () => {
 		chargeCard,
 		terminalReady,
 		terminal,
+		initializeTerminal,
 		stripeAlert,
 		setStripeAlert,
 		transactionInProgress,
@@ -88,8 +89,6 @@ const POS = () => {
 	const disableItem = useCallback(
 		(itemId, toEnable = false) => {
 			if (toEnable) {
-				console.log("Enabling item:", itemId);
-
 				databases.updateDocument({
 					databaseId: config.databases.bar.id,
 					collectionId: config.databases.bar.collections.items,
@@ -99,8 +98,6 @@ const POS = () => {
 					},
 				});
 			} else if (!toEnable) {
-				console.log("Disabling item:", itemId);
-
 				databases.updateDocument({
 					databaseId: config.databases.bar.id,
 					collectionId: config.databases.bar.collections.items,
@@ -124,7 +121,6 @@ const POS = () => {
 		[items]
 	);
 
-	// Retry a failed checkout using the existing transactionId (do not create a new payment intent)
 	const retryCheckout = () => {
 		if (!transactionId.current) {
 			setCheckoutError("No transaction available to retry");
@@ -295,7 +291,6 @@ const POS = () => {
 						stripe_id: result.id,
 					},
 				});
-				console.log(result);
 				setStripeAlert({
 					active: true,
 					message:
@@ -314,7 +309,11 @@ const POS = () => {
 			})
 			.catch((error) => {
 				setTransactionInProgress(false);
-				setCheckoutError("Error processing card payment");
+				setCheckoutError(
+					error.decline_code ||
+						error.code + "\n" + error.message ||
+						"Payment failed"
+				);
 			});
 	}
 
@@ -323,7 +322,7 @@ const POS = () => {
 		if (terminal && terminalReady) {
 			if (cart.length === 0) terminal.clearReaderDisplay();
 			else {
-				terminal.setReaderDisplay({
+				const updateTerm = terminal.setReaderDisplay({
 					cart: {
 						line_items: [
 							...cart.map((item) => ({
@@ -353,6 +352,17 @@ const POS = () => {
 					},
 					type: "cart",
 				});
+				updateTerm
+					.then((res) => {
+						if (res && res.error) {
+							// reinitialize terminals if reader update failed
+							initializeTerminal();
+						}
+					})
+					.catch((err) => {
+						// on promise rejection, reinitialize terminal
+						initializeTerminal();
+					});
 			}
 		}
 	}, [cart, discount, calculateTotal, terminal, terminalReady, total]);
