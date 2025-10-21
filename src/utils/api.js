@@ -139,33 +139,6 @@ export function useAppwrite() {
 		}
 	}, [functions]);
 
-	useEffect(() => {
-		(async () => {
-			try {
-				await account.get();
-			} catch (err) {
-				try {
-					// if not on login or register page, redirect to login
-					if (
-						!window.location.pathname.startsWith("/login") &&
-						!window.location.pathname.startsWith("/register")
-					) {
-						// redirect to login
-						window.location.href = "/login";
-					}
-				} catch (e) {
-					console.error("error creating session", e);
-				}
-			}
-		})();
-	}, [
-		account,
-		client,
-		refreshCategories,
-		refreshItems,
-		refreshData /*refreshEvents*/,
-	]);
-
 	async function login(email, password) {
 		try {
 			await account.get();
