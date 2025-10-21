@@ -6,7 +6,7 @@ import {
 	Functions,
 } from "appwrite";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 
 // db id 67c9ffd9003d68236514
 // items collection id 67c9ffe6001c17071bb7
@@ -138,6 +138,35 @@ export function useAppwrite() {
 			console.error("Error generating Stripe connection token:", error);
 		}
 	}, [functions]);
+
+	useEffect(() => {
+		(async () => {
+			try {
+				await account.get();
+				console.log("session active");
+			} catch (err) {
+				try {
+					// if not on login or register page, redirect to login
+					if (
+						!window.location.pathname.startsWith("/login") &&
+						!window.location.pathname.startsWith("/register")
+					) {
+						console.log("no active session");
+						// redirect to login
+						window.location.href = "/login";
+					}
+				} catch (e) {
+					console.error("error creating session", e);
+				}
+			}
+		})();
+	}, [
+		account,
+		client,
+		refreshCategories,
+		refreshItems,
+		refreshData /*refreshEvents*/,
+	]);
 
 	async function login(email, password) {
 		try {
