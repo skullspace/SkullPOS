@@ -30,20 +30,23 @@ export default function App() {
 						});
 					} else return;
 				}
-
+				console.log("no email or account");
 				let loginPage = route === "/login" || route === "/register";
 
 				// If account exists but no email, force logout and redirect to login
 				if (acct && !acct.email && !loginPage) {
 					logout();
+					console.log("no email logout");
 					return (window.location.href = "/login");
 				}
 
 				if (!loginPage) {
+					console.log("no account logout");
 					return (window.location.href = "/login");
 				}
 			})
 			.catch((err) => {
+				console.log("no account catch logout", err);
 				if (!(route === "/login" || route === "/register")) {
 					return (window.location.href = "/login");
 				}
