@@ -20,6 +20,7 @@ export default function App() {
 		account
 			.get()
 			.then((acct) => {
+				console.log("account check", acct);
 				// If an account object is returned and has an email -> go to POS
 				if (acct && acct.email) {
 					if (route === "/login" || route === "/register") {
@@ -35,8 +36,8 @@ export default function App() {
 
 				// If account exists but no email, force logout and redirect to login
 				if (acct && !acct.email && !loginPage) {
-					logout();
 					console.log("no email logout");
+					logout();
 					return (window.location.href = "/login");
 				}
 
