@@ -26,7 +26,7 @@ Transactions
 */
 
 const config = {
-	endpoint: "https://api.cloud.shotty.tech/v1",
+	endpoint: "https://api.shotty.tech/v1",
 	project: "68f2ac7b00002e7563a8",
 	databases: {
 		bar: {
