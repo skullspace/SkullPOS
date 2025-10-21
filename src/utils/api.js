@@ -6,7 +6,7 @@ import {
 	Functions,
 } from "appwrite";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useCallback } from "react";
 
 // db id 67c9ffd9003d68236514
 // items collection id 67c9ffe6001c17071bb7
