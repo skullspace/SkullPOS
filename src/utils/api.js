@@ -7,7 +7,6 @@ import {
 } from "appwrite";
 
 import { useMemo, useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
 
 // db id 67c9ffd9003d68236514
 // items collection id 67c9ffe6001c17071bb7
@@ -66,7 +65,6 @@ export function useAppwrite() {
 	const [items, setItems] = useState([]);
 	const [data, setData] = useState(null);
 	//const [events, setEvents] = useState(null);
-	const navigate = useNavigate();
 	const client = useMemo(() => createClient(), []);
 	const databases = useMemo(() => new Databases(client), [client]);
 	const account = useMemo(() => new Account(client), [client]);
@@ -169,22 +167,24 @@ export function useAppwrite() {
 		refreshData /*refreshEvents*/,
 	]);
 
-	async function login(email, password) {
-		try {
-			let login = await account.get();
-			console.log("already logged in", login);
-			throw new Error("Already logged in");
-		} catch (e) {
-			// not logged in, continue
-		}
-		let newLoging = await account.createEmailPasswordSession({
-			email,
-			password,
-		});
-		console.log("login success", newLoging);
-		navigate("/pos");
-		return newLoging;
-	}
+	const login = useCallback(
+		async (email, password) => {
+			try {
+				let login = await account.get();
+				console.log("already logged in", login);
+				throw new Error("Already logged in");
+			} catch (e) {
+				// not logged in, continue
+			}
+			let newLoging = await account.createEmailPasswordSession({
+				email,
+				password,
+			});
+			console.log("login success", newLoging);
+			return newLoging;
+		},
+		[account]
+	);
 
 	async function logout() {
 		try {
