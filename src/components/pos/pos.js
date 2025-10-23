@@ -153,13 +153,14 @@ const POS = () => {
 			0
 		);
 		if (member_discount_applied) {
-			const discountAmount = (newTotal * member_discount) / 100;
+			let discountAmount = (newTotal * member_discount) / 100;
+			discountAmount = parseInt(discountAmount);
 			setDiscount(discountAmount);
 			newTotal -= discountAmount;
 		} else {
 			setDiscount(0);
 		}
-		setTotal(newTotal);
+		setTotal(parseInt(newTotal));
 	};
 
 	const applyMemberDiscount = () => {
@@ -278,7 +279,18 @@ const POS = () => {
 			return;
 		}
 		// process card payment with stripe
-		chargeCard(total, retrying)
+		function setStripeID(resultID) {
+			databases.updateDocument({
+				databaseId: config.databases.bar.id,
+				collectionId: config.databases.bar.collections.transactions,
+				documentId: transactionId.current,
+				data: {
+					stripe_id: resultID,
+				},
+			});
+		}
+
+		chargeCard(total, retrying, setStripeID)
 			.then((result) => {
 				setCheckoutError(false);
 				databases.updateDocument({
@@ -288,7 +300,6 @@ const POS = () => {
 					data: {
 						status: "complete",
 						tip: parseInt(result.amount_details.tip.amount),
-						stripe_id: result.id,
 					},
 				});
 				setStripeAlert({

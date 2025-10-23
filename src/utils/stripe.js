@@ -158,7 +158,7 @@ export function useStripe() {
 	}
 
 	const getChargeID = useCallback(
-		async (amountCents) => {
+		async (amountCents, setStripeID) => {
 			try {
 				const response = await functions.createExecution({
 					functionId: "68f3c860003da00f14d8",
@@ -167,6 +167,7 @@ export function useStripe() {
 				const data = JSON.parse(response.responseBody);
 
 				// store intent id in a ref to avoid unnecessary re-renders
+				setStripeID(data.intent.id);
 				intentID.current = data.intent.id;
 				return data.intent.client_secret;
 			} catch (error) {
@@ -210,7 +211,7 @@ export function useStripe() {
 		setTransactionInProgress(false);
 	}, []);
 
-	function chargeCard(amountCents, retrying = false) {
+	function chargeCard(amountCents, retrying = false, setStripeID) {
 		if (amountCents <= 50) {
 			return Promise.reject(
 				new Error("Amount must be greater than 50 cents")
@@ -220,7 +221,7 @@ export function useStripe() {
 		return new Promise(async (resolve, reject) => {
 			let localChargeID;
 			if (!retrying) {
-				localChargeID = await getChargeID(amountCents);
+				localChargeID = await getChargeID(amountCents, setStripeID);
 				chargeID.current = localChargeID;
 			} else {
 				localChargeID = chargeID.current;
