@@ -163,6 +163,81 @@ const POS = () => {
 		setTotal(parseInt(newTotal));
 	};
 
+	// Barcode scanner keyboard capture
+	const barcodeBuffer = useRef("");
+	const barcodeTimer = useRef(null);
+
+	const processBarcode = useCallback(
+		(code) => {
+			if (code.startsWith("75855 ")) {
+				return;
+			}
+			if (!code) return;
+			// try common fields where a barcode might be stored
+			console.log(code);
+
+			const found = items.find((i) => {
+				console.log(i.UPC);
+				return i.UPC.includes(code);
+			});
+			console.log(found);
+			if (found) {
+				addItemToCart(found.$id);
+				setStripeAlert({
+					active: true,
+					message: `Scanned: ${found.name}`,
+					type: "success",
+				});
+			} else {
+				setStripeAlert({
+					active: true,
+					message: `Barcode not found: ${code}`,
+					type: "error",
+				});
+			}
+		},
+		[items, addItemToCart, setStripeAlert]
+	);
+
+	useEffect(() => {
+		function onKeyDown(e) {
+			// ignore when typing into inputs/textareas/contenteditable
+			const active = document.activeElement;
+			if (
+				active &&
+				(active.tagName === "INPUT" ||
+					active.tagName === "TEXTAREA" ||
+					active.isContentEditable)
+			) {
+				return;
+			}
+
+			if (e.key === "Enter") {
+				const barcode = barcodeBuffer.current;
+				barcodeBuffer.current = "";
+				if (barcode) processBarcode(barcode);
+				return;
+			}
+
+			// only capture printable single-character keys
+			if (e.key.length === 1) {
+				barcodeBuffer.current += e.key;
+				clearTimeout(barcodeTimer.current);
+				barcodeTimer.current = setTimeout(() => {
+					const barcode = barcodeBuffer.current;
+					barcodeBuffer.current = "";
+					if (barcode) processBarcode(barcode);
+				}, 200);
+			}
+		}
+
+		window.addEventListener("keydown", onKeyDown);
+		return () => {
+			window.removeEventListener("keydown", onKeyDown);
+			clearTimeout(barcodeTimer.current);
+		};
+	}, [processBarcode]);
+
 	const applyMemberDiscount = () => {
 		if (member_discount_applied) {
 			setMemberDiscountApplied(false);
@@ -279,18 +354,7 @@ const POS = () => {
 			return;
 		}
 		// process card payment with stripe
-		function setStripeID(resultID) {
-			databases.updateDocument({
-				databaseId: config.databases.bar.id,
-				collectionId: config.databases.bar.collections.transactions,
-				documentId: transactionId.current,
-				data: {
-					stripe_id: resultID,
-				},
-			});
-		}
-
-		chargeCard(total, retrying, setStripeID)
+		chargeCard(total, retrying)
 			.then((result) => {
 				setCheckoutError(false);
 				databases.updateDocument({
@@ -300,6 +364,7 @@ const POS = () => {
 					data: {
 						status: "complete",
 						tip: parseInt(result.amount_details.tip.amount),
+						stripe_id: result.id,
 					},
 				});
 				setStripeAlert({

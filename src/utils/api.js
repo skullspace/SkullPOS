@@ -26,7 +26,7 @@ Transactions
 */
 
 const config = {
-	endpoint: "https://api.skullpos.shotty.tech/v1",
+	endpoint: "https://api.cloud.shotty.tech/v1",
 	project: "68f2ac7b00002e7563a8",
 	databases: {
 		bar: {
@@ -87,6 +87,7 @@ export function useAppwrite() {
 				databaseId: config.databases.bar.id,
 				collectionId: config.databases.bar.collections.items,
 			});
+			console.log("fetched items", data.documents);
 
 			setItems(data.documents || []);
 		} catch (err) {

@@ -3,7 +3,7 @@ import { Box } from "@mui/material";
 import Item from "./item";
 const Category = ({ category, items, onAdd, disableItem }) => {
 	const categoryItems = items.filter(
-		(item) => item.categories && item.categories.$id === category.$id
+		(item) => item.categories && item.categories === category.$id
 	);
 
 	return (
