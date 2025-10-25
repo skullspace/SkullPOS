@@ -49,14 +49,10 @@ const config = {
 };
 
 function createClient() {
-	// add dev key for local dev
-	const devKey =
-		"719ab6c6002897c096e2dbedf29a0e737f45e8175563bd6d2b6ceb3c5fe0b9f23e8fda3da5c8eb030ec7241d680904f32ae01ae447991e186f1bf1c784ce7fac5356d1d6e5c5a38e1c1e4ac2bb1ea199a739155f1879b37d40e15c12cb59466372f8fdc192a4adac5af7a4af3fd6c92ecd4ddee6b1fa0f49ee0fe84507872afb";
 	const client = new Appwrite();
 	client
 		.setEndpoint(config.endpoint)
 		.setProject(config.project)
-		.setDevKey(devKey);
 	return client;
 }
 
