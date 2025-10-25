@@ -87,7 +87,6 @@ export function useAppwrite() {
 				databaseId: config.databases.bar.id,
 				collectionId: config.databases.bar.collections.items,
 			});
-			console.log("fetched items", data.documents);
 
 			setItems(data.documents || []);
 		} catch (err) {
@@ -174,9 +173,7 @@ export function useAppwrite() {
 				let login = await account.get();
 				console.log("already logged in", login);
 				throw new Error("Already logged in");
-			} catch (e) {
-				// not logged in, continue
-			}
+			} catch (e) {}
 			let newLoging = await account.createEmailPasswordSession({
 				email,
 				password,

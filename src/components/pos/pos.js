@@ -169,18 +169,15 @@ const POS = () => {
 
 	const processBarcode = useCallback(
 		(code) => {
-			if (code.startsWith("75855 ")) {
+			if (code.startsWith("75855")) {
 				return;
 			}
 			if (!code) return;
 			// try common fields where a barcode might be stored
-			console.log(code);
 
 			const found = items.find((i) => {
-				console.log(i.UPC);
 				return i.UPC.includes(code);
 			});
-			console.log(found);
 			if (found) {
 				addItemToCart(found.$id);
 				setStripeAlert({
@@ -198,6 +195,8 @@ const POS = () => {
 		},
 		[items, addItemToCart, setStripeAlert]
 	);
+
+    
 
 	useEffect(() => {
 		function onKeyDown(e) {
@@ -296,9 +295,7 @@ const POS = () => {
 			payment_due: parseInt(total),
 			payment_method: paymentMethod,
 			tip: 0,
-			event: null,
 			discount: parseInt(discount),
-			discount_reason: member_discount_applied ? "member_discount" : "",
 			status: "pending",
 			testing: true,
 		};
@@ -385,10 +382,13 @@ const POS = () => {
 			})
 			.catch((error) => {
 				setTransactionInProgress(false);
+				if (error.decline_code) {
+					return setCheckoutError(error.code + "\n" + error.message);
+				}
 				setCheckoutError(
-					error.decline_code ||
-						error.code + "\n" + error.message ||
-						"Payment failed"
+					error.decline_code
+						? error.code + "\n" + error.message
+						: "Payment failed"
 				);
 			});
 	}

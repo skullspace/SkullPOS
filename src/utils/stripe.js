@@ -85,9 +85,6 @@ export function useStripe() {
 				}
 				setTerminals(onlineReaders);
 				if (onlineReaders.length === 1) {
-					console.log(
-						"Auto-selecting the only available online reader"
-					);
 					setSelectedTerminal(onlineReaders[0]);
 				}
 			}
@@ -103,7 +100,6 @@ export function useStripe() {
 
 	const unexpectedDisconnect = useCallback(
 		(err) => {
-			console.log("Stripe token updated:", err);
 			console.error("Reader disconnected unexpectedly");
 			// Handle the unexpected disconnection
 			getTerminals();
@@ -113,7 +109,6 @@ export function useStripe() {
 
 	const initializeTerminal = useCallback(async () => {
 		// prevent double-initialization
-		console.log("initializeTerminal called");
 		if (initialized.current) return;
 		if (terminal.current) {
 			initialized.current = true;
@@ -158,7 +153,7 @@ export function useStripe() {
 	}
 
 	const getChargeID = useCallback(
-		async (amountCents, setStripeID) => {
+		async (amountCents) => {
 			try {
 				const response = await functions.createExecution({
 					functionId: "68f3c860003da00f14d8",
@@ -167,7 +162,6 @@ export function useStripe() {
 				const data = JSON.parse(response.responseBody);
 
 				// store intent id in a ref to avoid unnecessary re-renders
-				setStripeID(data.intent.id);
 				intentID.current = data.intent.id;
 				return data.intent.client_secret;
 			} catch (error) {
@@ -211,7 +205,7 @@ export function useStripe() {
 		setTransactionInProgress(false);
 	}, []);
 
-	function chargeCard(amountCents, retrying = false, setStripeID) {
+	function chargeCard(amountCents, retrying = false) {
 		if (amountCents <= 50) {
 			return Promise.reject(
 				new Error("Amount must be greater than 50 cents")
@@ -221,11 +215,12 @@ export function useStripe() {
 		return new Promise(async (resolve, reject) => {
 			let localChargeID;
 			if (!retrying) {
-				localChargeID = await getChargeID(amountCents, setStripeID);
+				localChargeID = await getChargeID(amountCents);
 				chargeID.current = localChargeID;
 			} else {
 				localChargeID = chargeID.current;
 			}
+
 			const collectResult = await terminal.current.collectPaymentMethod(
 				localChargeID,
 				{
@@ -275,7 +270,6 @@ export function useStripe() {
 	}
 
 	useEffect(() => {
-		console.log("initizing stripe terminal");
 		initializeTerminal();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
@@ -297,7 +291,6 @@ export function useStripe() {
 				});
 				initializeTerminal();
 			} else {
-				console.log("Connected to reader:", connectResult);
 				setStripeAlert({
 					active: true,
 					message: `Connected to reader: ${connectResult.reader.label}`,

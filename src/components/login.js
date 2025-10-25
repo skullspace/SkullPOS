@@ -11,7 +11,7 @@ import {
 import { useNavigate } from "react-router-dom";
 
 const Login = () => {
-	const { login } = useAppwrite(); // Assuming `login` is a method from useAppwrite
+	const { login } = useAppwrite();
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [error, setError] = useState("");
@@ -19,9 +19,9 @@ const Login = () => {
 	const handleLogin = async (e) => {
 		e.preventDefault();
 		try {
-			await login(email, password); // Replace with your Appwrite login logic
+			await login(email, password);
 			setError("");
-			alert("Login successful!");
+			navigate("/pos");
 		} catch (err) {
 			console.error("Login error:", err);
 			setError(err.message || "Login failed");
