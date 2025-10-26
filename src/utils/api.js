@@ -37,6 +37,7 @@ const config = {
 				events: "68e400210008d19bb5c9",
 				inventory: "68e400210008d19bb5c9",
 				transactions: "68e4cd3500179ce661c6",
+				giftcards: "giftcards",
 			},
 		},
 		data: {
@@ -50,9 +51,7 @@ const config = {
 
 function createClient() {
 	const client = new Appwrite();
-	client
-		.setEndpoint(config.endpoint)
-		.setProject(config.project)
+	client.setEndpoint(config.endpoint).setProject(config.project);
 	return client;
 }
 
@@ -155,13 +154,7 @@ export function useAppwrite() {
 				}
 			}
 		})();
-	}, [
-		account,
-		client,
-		refreshCategories,
-		refreshItems,
-		refreshData /*refreshEvents*/,
-	]);
+	}, [account]);
 
 	const login = useCallback(
 		async (email, password) => {

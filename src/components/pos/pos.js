@@ -1,6 +1,12 @@
 /* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, {
+	useState,
+	useEffect,
+	useCallback,
+	useRef,
+	useMemo,
+} from "react";
 import Cart from "./cart";
 import Modals from "./modals";
 import {
@@ -19,6 +25,14 @@ import Item from "./item";
 import Category from "./category";
 import { formatCAD } from "../../utils/format";
 import { useStripe } from "../../utils/stripe";
+import createHandleCardPayment from "../../utils/handleCardPayment";
+import createCheckout from "../../utils/checkout";
+import createProcessBarcode from "../../utils/barcode";
+import {
+	addItemToCart as addItemToCartUtil,
+	removeItemFromCart as removeItemFromCartUtil,
+	clearCartState as clearCartStateUtil,
+} from "../../utils/cartUtils";
 import { type } from "@testing-library/user-event/dist/type";
 
 const POS = () => {
@@ -89,6 +103,7 @@ const POS = () => {
 	const disableItem = useCallback(
 		(itemId, toEnable = false) => {
 			if (toEnable) {
+				console.log("Enabling item:", itemId);
 				databases.updateDocument({
 					databaseId: config.databases.bar.id,
 					collectionId: config.databases.bar.collections.items,
@@ -98,6 +113,7 @@ const POS = () => {
 					},
 				});
 			} else if (!toEnable) {
+				console.log("Disabling item:", itemId);
 				databases.updateDocument({
 					databaseId: config.databases.bar.id,
 					collectionId: config.databases.bar.collections.items,
@@ -136,6 +152,74 @@ const POS = () => {
 			return;
 		}
 
+		if (paymentMethod === "giftcard") {
+			(async () => {
+				const gift = giftcard;
+				if (!gift) {
+					setCheckoutError("No giftcard loaded");
+					setTransactionInProgress(false);
+					return;
+				}
+
+				const paymentDue = parseInt(total || 0);
+				const giftBalance = parseInt(gift.balance || 0);
+				const applied = Math.min(giftBalance, paymentDue);
+				const remaining = paymentDue - applied;
+
+				try {
+					await databases.updateDocument({
+						databaseId: config.databases.bar.id,
+						collectionId:
+							config.databases.bar.collections.transactions,
+						documentId: transactionId.current,
+						data: {
+							giftcards: [gift.$id],
+							giftcard_amount: applied,
+							payment_due: remaining,
+							payment_method:
+								remaining > 0 ? "giftcard+stripe" : "giftcard",
+							status: remaining > 0 ? "pending" : "complete",
+						},
+					});
+
+					const newBalance = giftBalance - applied;
+					await databases.updateDocument({
+						databaseId: config.databases.bar.id,
+						collectionId:
+							config.databases.bar.collections.giftcards,
+						documentId: gift.$id,
+						data: { balance: newBalance },
+					});
+
+					setGiftcard &&
+						setGiftcard({ ...gift, balance: newBalance });
+
+					if (remaining <= 0) {
+						setTransactionInProgress(false);
+						setCheckoutSuccess(true);
+						clearCart();
+						setPaymentMethod("stripe");
+						return;
+					}
+
+					// partial: charge remainder via card
+					if (handleCardPayment) {
+						await handleCardPayment(
+							transactionId.current,
+							true,
+							remaining
+						);
+						return;
+					}
+				} catch (err) {
+					console.error("Retry giftcard error", err);
+					setCheckoutError("Failed to retry giftcard");
+					setTransactionInProgress(false);
+				}
+			})();
+			return;
+		}
+
 		if (paymentMethod === "cash") {
 			// reopen cash modal so user can re-submit cash payment
 			setCashModalOpen(true);
@@ -167,37 +251,90 @@ const POS = () => {
 	const barcodeBuffer = useRef("");
 	const barcodeTimer = useRef(null);
 
-	const processBarcode = useCallback(
-		(code) => {
-			if (code.startsWith("75855")) {
+	// move barcode matching logic into a small utility factory so it's testable
+	const [giftcard, setGiftcard] = useState(null);
+	const [giftcardUsage, setGiftcardUsage] = useState(null);
+
+	const handleGiftcard = useCallback(
+		async (code) => {
+			// basic giftcard lookup using configured collection if present
+			setStripeAlert({
+				active: true,
+				message: "Looking up giftcard...",
+				type: "info",
+			});
+
+			const collectionId =
+				config &&
+				config.databases &&
+				config.databases.bar &&
+				config.databases.bar.collections &&
+				config.databases.bar.collections.giftcards;
+
+			if (!collectionId) {
+				setStripeAlert({
+					active: true,
+					message: "Giftcards collection not configured",
+					type: "error",
+				});
 				return;
 			}
-			if (!code) return;
-			// try common fields where a barcode might be stored
 
-			const found = items.find((i) => {
-				return i.UPC.includes(code);
-			});
-			if (found) {
-				addItemToCart(found.$id);
+			try {
+				const res = await databases.listDocuments({
+					databaseId: config.databases.bar.id,
+					collectionId,
+				});
+
+				const docs = res.documents || [];
+				const found = docs.find((d) => {
+					const upc = d.UPC;
+					if (!upc) return false;
+					if (Array.isArray(upc)) return upc.includes(code);
+					if (typeof upc === "string")
+						return upc === code || upc.includes(code);
+					return false;
+				});
+
+				if (!found) {
+					setStripeAlert({
+						active: true,
+						message: `Giftcard not found: ${code}`,
+						type: "error",
+					});
+					return;
+				}
+
+				// set local giftcard state and switch payment method to giftcard
+				setGiftcard(found);
+				setPaymentMethod("giftcard");
 				setStripeAlert({
 					active: true,
-					message: `Scanned: ${found.name}`,
+					message: `Giftcard loaded: $${(found.balance || 0) / 100}`,
 					type: "success",
 				});
-			} else {
+			} catch (err) {
+				console.error("error looking up giftcard", err);
 				setStripeAlert({
 					active: true,
-					message: `Barcode not found: ${code}`,
+					message: "Error looking up giftcard",
 					type: "error",
 				});
 			}
 		},
-		[items, addItemToCart, setStripeAlert]
+		[databases, config, setStripeAlert]
 	);
 
-    
-
+	const processBarcode = useMemo(
+		() =>
+			createProcessBarcode({
+				getItems: () => items,
+				addItemToCart,
+				setStripeAlert,
+				handleGiftcard,
+			}),
+		[items, addItemToCart, setStripeAlert, handleGiftcard]
+	);
 	useEffect(() => {
 		function onKeyDown(e) {
 			// ignore when typing into inputs/textareas/contenteditable
@@ -247,77 +384,99 @@ const POS = () => {
 	};
 
 	function addItemToCart(itemId) {
-		const item = items.find((item) => item.$id === itemId);
-		const existingItem = cart.find((cartItem) => cartItem.$id === itemId);
-		if (existingItem) {
-			setCart(
-				cart.map((cartItem) =>
-					cartItem.$id === itemId
-						? { ...cartItem, quantity: cartItem.quantity + 1 }
-						: cartItem
-				)
-			);
-		} else {
-			setCart([...cart, { ...item, quantity: 1 }]);
-		}
+		setCart((prev) => addItemToCartUtil(prev, items, itemId));
 	}
 
 	function removeItemFromCart(itemId, all = false) {
-		const existingItem = cart.find((cartItem) => cartItem.$id === itemId);
-		if (existingItem.quantity > 1 && !all) {
-			setCart(
-				cart.map((cartItem) =>
-					cartItem.$id === itemId
-						? { ...cartItem, quantity: cartItem.quantity - 1 }
-						: cartItem
-				)
-			);
-		} else {
-			setCart(cart.filter((cartItem) => cartItem.$id !== itemId));
-		}
+		setCart((prev) => removeItemFromCartUtil(prev, itemId, all));
 	}
 
 	function clearCart() {
-		setMemberDiscountApplied(false);
-		setDiscount(0);
-		setCart([]);
+		// Use the util to get the canonical reset values, then apply them to state
+		const reset = clearCartStateUtil();
+		setMemberDiscountApplied(reset.member_discount_applied);
+		setDiscount(reset.discount);
+		setCart(reset.cart);
 	}
 
-	async function checkout() {
-		setTransactionInProgress(true);
-		if (!paymentMethod) {
-			setCheckoutError("Please select a payment method");
-			return;
-		}
+	// Create handleCardPayment using the utility factory so UI logic stays thin
+	const handleCardPayment = useMemo(
+		() =>
+			createHandleCardPayment({
+				chargeCard,
+				terminal,
+				databases,
+				config,
+				setStripeAlert,
+				setTransactionInProgress,
+				setCheckoutError,
+				setCheckoutSuccess,
+				clearCart,
+				setPaymentMethod,
+				formatCAD,
+				getTotal: () => total,
+				getCart: () => cart,
+			}),
+		[
+			chargeCard,
+			terminal,
+			databases,
+			config,
+			setStripeAlert,
+			setTransactionInProgress,
+			setCheckoutError,
+			setCheckoutSuccess,
+			clearCart,
+			setPaymentMethod,
+			formatCAD,
+			total,
+			cart,
+		]
+	);
 
-		const transaction = {
-			items: JSON.stringify(cart),
-			payment_due: parseInt(total),
-			payment_method: paymentMethod,
-			tip: 0,
-			discount: parseInt(discount),
-			status: "pending",
-			testing: true,
-		};
-
-		const document = await databases.createDocument(
-			config.databases.bar.id,
-			config.databases.bar.collections.transactions,
-			uniqueId(),
-			transaction
-		);
-
-		transactionId.current = document.$id;
-
-		if (paymentMethod === "cash") {
-			setTransactionInProgress(false);
-			setCashModalOpen(true);
-			return;
-		}
-		if (paymentMethod === "stripe") {
-			handleCardPayment(document.$id);
-		}
-	}
+	const checkout = useMemo(
+		() =>
+			createCheckout({
+				databases,
+				config,
+				uniqueId,
+				getCart: () => cart,
+				getTotal: () => total,
+				getDiscount: () => discount,
+				getPaymentMethod: () => paymentMethod,
+				getGiftcard: () => giftcard,
+				setGiftcard,
+				setGiftcardUsage,
+				transactionIdRef: transactionId,
+				setTransactionInProgress,
+				setCheckoutError,
+				setCashModalOpen,
+				handleCardPayment,
+				clearCart,
+				setCheckoutSuccess,
+				setPaymentMethod,
+			}),
+		[
+			databases,
+			config,
+			uniqueId,
+			cart,
+			total,
+			discount,
+			paymentMethod,
+			transactionId,
+			setTransactionInProgress,
+			setCheckoutError,
+			setCashModalOpen,
+			handleCardPayment,
+			giftcard,
+			setGiftcard,
+			clearCart,
+			setCheckoutSuccess,
+			setPaymentMethod,
+			setGiftcardUsage,
+		]
+	);
 
 	function handleCashPayment() {
 		setTransactionInProgress(false);
@@ -343,54 +502,6 @@ const POS = () => {
 				status: "complete",
 			},
 		});
-	}
-
-	function handleCardPayment(transaction, retrying = false) {
-		if (!stripeToken) {
-			setCheckoutError("Stripe terminal not connected");
-			return;
-		}
-		// process card payment with stripe
-		chargeCard(total, retrying)
-			.then((result) => {
-				setCheckoutError(false);
-				databases.updateDocument({
-					databaseId: config.databases.bar.id,
-					collectionId: config.databases.bar.collections.transactions,
-					documentId: transaction,
-					data: {
-						status: "complete",
-						tip: parseInt(result.amount_details.tip.amount),
-						stripe_id: result.id,
-					},
-				});
-				setStripeAlert({
-					active: true,
-					message:
-						"Payment Successful: " +
-						formatCAD(result.amount) +
-						" Total: " +
-						formatCAD(total) +
-						" + Tip: " +
-						formatCAD(result.amount_details.tip.amount),
-					type: "success",
-				});
-				setTransactionInProgress(false);
-				setCheckoutSuccess(true);
-				clearCart();
-				setPaymentMethod("stripe");
-			})
-			.catch((error) => {
-				setTransactionInProgress(false);
-				if (error.decline_code) {
-					return setCheckoutError(error.code + "\n" + error.message);
-				}
-				setCheckoutError(
-					error.decline_code
-						? error.code + "\n" + error.message
-						: "Payment failed"
-				);
-			});
 	}
 
 	useEffect(() => {
@@ -520,6 +631,17 @@ const POS = () => {
 				terminals={terminals}
 				selectedTerminal={selectedTerminal}
 				setSelectedTerminal={setSelectedTerminal}
+				onManualUPCEntry={processBarcode}
+				giftcard={giftcard}
+				onClearGiftcard={() => {
+					setGiftcard(null);
+					setPaymentMethod("stripe");
+					setStripeAlert({
+						active: true,
+						message: "Giftcard cleared",
+						type: "info",
+					});
+				}}
 			/>
 			<Modals
 				cashModalOpen={cashModalOpen}

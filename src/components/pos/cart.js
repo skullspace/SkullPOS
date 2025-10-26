@@ -1,5 +1,14 @@
-import React from "react";
-import { Box, Button, IconButton } from "@mui/material";
+import React, { useState } from "react";
+import {
+	Box,
+	Button,
+	IconButton,
+	Dialog,
+	DialogTitle,
+	DialogContent,
+	DialogActions,
+	TextField,
+} from "@mui/material";
 import {
 	FormControl,
 	InputLabel,
@@ -30,7 +39,26 @@ const Cart = ({
 	terminals,
 	selectedTerminal,
 	setSelectedTerminal,
+	giftcard,
+	onClearGiftcard,
+	transactionInProgress,
+	onManualUPCEntry,
 }) => {
+	const [manualOpen, setManualOpen] = useState(false);
+	const [manualValue, setManualValue] = useState("");
+
+	const openManual = () => {
+		setManualValue("");
+		setManualOpen(true);
+	};
+
+	const submitManual = () => {
+		if (manualValue && onManualUPCEntry)
+			onManualUPCEntry(manualValue.trim());
+		setManualOpen(false);
+		setManualValue("");
+	};
+
 	return (
 		<Box
 			sx={{
@@ -47,11 +75,23 @@ const Cart = ({
 			<FormControl fullWidth>
 				{terminals.length > 0 && (
 					<>
-						<InputLabel id="terminal-select-label">
-							Select Terminal
-						</InputLabel>
+						<Box
+							sx={{
+								display: "flex",
+								justifyContent: "flex-start",
+								mb: 1,
+							}}
+						>
+							<Button
+								size="small"
+								onClick={openManual}
+								sx={{ mr: 1 }}
+							>
+								Manual UPC
+							</Button>
+						</Box>
+						<br />
 						<Select
-							labelId="terminal-select-label"
 							value={selectedTerminal}
 							onChange={(e) =>
 								setSelectedTerminal(e.target.value)
@@ -65,6 +105,29 @@ const Cart = ({
 						</Select>
 					</>
 				)}
+
+				{/* Manual UPC entry dialog */}
+				<Dialog open={manualOpen} onClose={() => setManualOpen(false)}>
+					<DialogTitle>Enter UPC / Giftcard</DialogTitle>
+					<DialogContent>
+						<TextField
+							autoFocus
+							margin="dense"
+							label="UPC or Giftcard Code"
+							fullWidth
+							value={manualValue}
+							onChange={(e) => setManualValue(e.target.value)}
+						/>
+					</DialogContent>
+					<DialogActions>
+						<Button onClick={() => setManualOpen(false)}>
+							Cancel
+						</Button>
+						<Button onClick={submitManual} disabled={!manualValue}>
+							Add
+						</Button>
+					</DialogActions>
+				</Dialog>
 			</FormControl>
 			<Box sx={{ flex: 1, overflow: "auto" }}>
 				{member_discount_applied && (
@@ -110,6 +173,36 @@ const Cart = ({
 			>
 				{cart.length > 0 && (
 					<Box sx={{ mt: 2 }}>
+						{giftcard && (
+							<Box
+								sx={{
+									mb: 1,
+									display: "flex",
+									justifyContent: "space-between",
+									alignItems: "center",
+								}}
+							>
+								<div>
+									<strong>Giftcard:</strong>{" "}
+									{(() => {
+										const id = giftcard.$id || "";
+										if (id.length <= 8) return id;
+										return "****" + id.slice(-8);
+									})()}
+									<div>
+										Balance:{" "}
+										{formatCAD(giftcard.balance || 0)}
+									</div>
+								</div>
+								<Button
+									size="small"
+									onClick={onClearGiftcard}
+									disabled={!!transactionInProgress}
+								>
+									Clear Giftcard
+								</Button>
+							</Box>
+						)}
 						{(() => {
 							return <h3>Subtotal: {formatCAD(total)}</h3>;
 						})()}
