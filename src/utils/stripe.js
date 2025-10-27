@@ -96,7 +96,7 @@ export function useStripe() {
 				type: "error",
 			});
 		}
-	}, [terminal, setStripeAlert, setTerminals, setSelectedTerminal]);
+	}, [terminal, setStripeAlert, setTerminals]);
 
 	const unexpectedDisconnect = useCallback(
 		(err) => {
