@@ -86,6 +86,11 @@ export function useStripe() {
 					});
 					return;
 				}
+				setStripeAlert({
+					active: true,
+					message: "Terminals fetched",
+					type: "info",
+				});
 				setTerminals(onlineReaders);
 			}
 		} catch (error) {
