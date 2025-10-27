@@ -2,6 +2,8 @@ import { useAppwrite } from "./api";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { loadStripeTerminal } from "@stripe/terminal-js";
 
+const test = true;
+
 export function useStripe() {
 	// call appwrite function : 68f2904a00171e8b0266
 	const { generateStripeConnectionToken, functions } = useAppwrite();
@@ -58,6 +60,7 @@ export function useStripe() {
 			const discoverResult = await terminal.current.discoverReaders(
 				config
 			);
+			console.log("discoverResult", discoverResult);
 			if (discoverResult.error) {
 				setStripeAlert({
 					active: true,
@@ -84,9 +87,6 @@ export function useStripe() {
 					return;
 				}
 				setTerminals(onlineReaders);
-				if (onlineReaders.length === 1) {
-					setSelectedTerminal(onlineReaders[0]);
-				}
 			}
 		} catch (error) {
 			console.error("Error fetching terminals:", error);
@@ -157,7 +157,10 @@ export function useStripe() {
 			try {
 				const response = await functions.createExecution({
 					functionId: "68f3c860003da00f14d8",
-					body: JSON.stringify({ amount: parseInt(amountCents) }),
+					body: JSON.stringify({
+						test: test ? "test" : "",
+						amount: parseInt(amountCents),
+					}),
 				});
 				const data = JSON.parse(response.responseBody);
 
@@ -182,7 +185,10 @@ export function useStripe() {
 		try {
 			await functions.createExecution({
 				functionId: "68f6272500160b48ee44",
-				body: JSON.stringify({ intent: intentID.current }),
+				body: JSON.stringify({
+					test: test ? "test" : "",
+					intent: intentID.current,
+				}),
 			});
 			setStripeAlert({
 				active: true,

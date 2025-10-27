@@ -10,7 +10,7 @@ const Item = ({ item, onAdd, disableItem }) => {
 	const longPressTimeout = React.useRef(null);
 	const longPressTriggered = React.useRef(false);
 	const pointerIdRef = React.useRef(null);
-	const LONG_PRESS_MS = 1000;
+	const LONG_PRESS_MS = 500;
 	const [disabled, setDisabled] = React.useState(false);
 
 	React.useEffect(() => {

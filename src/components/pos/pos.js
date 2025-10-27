@@ -251,7 +251,6 @@ const POS = () => {
 	const barcodeBuffer = useRef("");
 	const barcodeTimer = useRef(null);
 
-	// move barcode matching logic into a small utility factory so it's testable
 	const [giftcard, setGiftcard] = useState(null);
 	const [giftcardUsage, setGiftcardUsage] = useState(null);
 

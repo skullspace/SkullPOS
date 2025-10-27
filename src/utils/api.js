@@ -8,6 +8,8 @@ import {
 
 import { useMemo, useState, useEffect, useCallback } from "react";
 
+const test = true;
+
 // db id 67c9ffd9003d68236514
 // items collection id 67c9ffe6001c17071bb7
 // category collection id 67c9ffdd0039c4e09c9a
@@ -125,6 +127,9 @@ export function useAppwrite() {
 		try {
 			const response = await functions.createExecution({
 				functionId: "68f2904a00171e8b0266",
+				body: test
+					? JSON.stringify({ test: "test" })
+					: JSON.stringify({}),
 			});
 			const data = JSON.parse(response.responseBody);
 			return data.secret;

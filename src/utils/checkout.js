@@ -31,14 +31,19 @@ export default function createCheckout(deps) {
 
 		const paymentMethod = getPaymentMethod();
 
+		let itemsRelList = (getCart ? getCart() : []).map((item) => item.$id);
+		console.log("ItemsRelList for transaction:", itemsRelList);
+
 		const transaction = {
-			items: JSON.stringify(getCart ? getCart() : []),
+			cart: JSON.stringify(getCart ? getCart() : []),
 			payment_due: parseInt(getTotal ? getTotal() : 0),
 			payment_method: paymentMethod,
 			tip: 0,
 			discount: parseInt(getDiscount ? getDiscount() : 0),
 			status: "pending",
 			testing: true,
+			itemsRel: itemsRelList,
+			total: getTotal ? getTotal() : 0,
 		};
 
 		try {
