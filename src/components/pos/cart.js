@@ -77,6 +77,14 @@ const Cart = ({
 							}}
 						>
 							<Button
+								onClick={() => {
+									window.document.documentElement.requestFullscreen();
+								}}
+							>
+								{" "}
+								Fullscreen
+							</Button>
+							<Button
 								size="small"
 								onClick={openManual}
 								sx={{ mr: 1 }}
