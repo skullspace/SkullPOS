@@ -58,10 +58,18 @@ export function useStripe() {
 			autoExpire: false,
 		});
 		try {
-			const config = {
-				simulated: false,
-				location: "tml_GO9HoQxw7phAmY",
-			};
+			let config;
+			if (test) {
+				config = {
+					simulated: false,
+					location: "tml_GO9HoQxw7phAmY",
+				};
+			} else {
+				config = {
+					simulated: false,
+					location: "tml_GO9PRw37uKAph5",
+				};
+			}
 			const discoverResult = await terminal.current.discoverReaders(
 				config
 			);
