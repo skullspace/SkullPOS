@@ -138,6 +138,7 @@ const POS = () => {
 	);
 
 	const retryCheckout = () => {
+		setCheckoutError(false);
 		if (!transactionId.current) {
 			setCheckoutError("No transaction available to retry");
 			return;
