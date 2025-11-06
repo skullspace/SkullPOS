@@ -4,6 +4,7 @@ import {
 	Account,
 	ID,
 	Functions,
+	Query,
 } from "appwrite";
 
 import { useMemo, useState, useEffect, useCallback } from "react";
@@ -83,6 +84,7 @@ export function useAppwrite() {
 			const data = await databases.listDocuments({
 				databaseId: config.databases.bar.id,
 				collectionId: config.databases.bar.collections.items,
+				queries: [Query.orderAsc("name")],
 			});
 
 			setItems(data.documents || []);
