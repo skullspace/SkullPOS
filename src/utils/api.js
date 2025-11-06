@@ -9,7 +9,12 @@ import {
 
 import { useMemo, useState, useEffect, useCallback } from "react";
 
-const test = true;
+// if on localhost, use test mode
+const isLocalhost =
+	(window.location.hostname === "localhost" ||
+	window.location.hostname === "127.0.0.1");
+
+const test = isLocalhost;
 
 // db id 67c9ffd9003d68236514
 // items collection id 67c9ffe6001c17071bb7

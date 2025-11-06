@@ -1,3 +1,10 @@
+// if on localhost, use test mode
+const isLocalhost =
+	window.location.hostname === "localhost" ||
+	window.location.hostname === "127.0.0.1";
+
+const test = isLocalhost;
+
 export default function createCheckout(deps) {
 	const {
 		databases,
@@ -41,7 +48,7 @@ export default function createCheckout(deps) {
 			tip: 0,
 			discount: parseInt(getDiscount ? getDiscount() : 0),
 			status: "pending",
-			testing: true,
+			testing: test,
 			itemsRel: itemsRelList,
 			total: getTotal ? getTotal() : 0,
 		};
