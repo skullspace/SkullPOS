@@ -6,6 +6,12 @@ const Category = ({ category, items, onAdd, disableItem }) => {
 		(item) => item.categories && item.categories === category.$id
 	);
 
+	// if no items in this category are POS-enabled, don't render the category
+	const hasEnabledItems = categoryItems.some(
+		(item) => item.enabledPOS !== false
+	);
+	if (!hasEnabledItems) return null;
+
 	return (
 		<Box key={category.$id} sx={{ mb: 2, mx: 2.5, fontSize: ".75em" }}>
 			<h2>{category.name}</h2>
