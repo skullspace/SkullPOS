@@ -18,6 +18,7 @@ const Item = ({ item, onAdd, disableItem }) => {
 			setDisabled(true);
 		}
 	}, [item.shown]);
+	if (item && item.enabledPOS === false) return null;
 
 	const handlePointerDown = (e) => {
 		longPressTriggered.current = false;
