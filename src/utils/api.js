@@ -267,7 +267,6 @@ export function useAppwrite() {
 				if (item.discount > 0) {
 					itemCost = cartItem.price / 2;
 				} else itemCost = cartItem.price;
-				revenue += (itemCost * cartItem.quantity) / 100;
 				existingItem.revenue += (itemCost * cartItem.quantity) / 100;
 			});
 			totalSales += item.total + item.discount;
