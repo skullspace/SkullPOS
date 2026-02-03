@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import React from "react";
 import { useAppwrite } from "../../utils/api";
 import {
@@ -90,11 +91,6 @@ const SalesReport = ({ open, onClose }) => {
 		};
 
 		return sorted.sort(comparator);
-	};
-
-	const handleGenerateReport = () => {
-		setLoading(true);
-		getReport(startDate, endDate).finally(() => setLoading(false));
 	};
 
 	const handleQuickSelect = (range) => {
