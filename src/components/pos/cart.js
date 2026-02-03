@@ -8,9 +8,11 @@ import {
 	DialogContent,
 	DialogActions,
 	TextField,
+	Menu,
 } from "@mui/material";
 import { FormControl, Select, MenuItem, Tooltip } from "@mui/material";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
+import HamburgerMenuIcon from "@mui/icons-material/Menu";
 import MoneyIcon from "@mui/icons-material/AttachMoney";
 import CheckoutIcon from "@mui/icons-material/ShoppingCartCheckout";
 import DeleteIcon from "@mui/icons-material/Delete";
@@ -53,6 +55,12 @@ const Cart = ({
 		setManualValue("");
 	};
 
+	// control for menu open close
+	const [menuAnchorEl, setMenuAnchorEl] = useState(null);
+	const menuOpen = Boolean(menuAnchorEl);
+	const [terminalMenuAnchorEl, setTerminalMenuAnchorEl] = useState(null);
+	const terminalMenuOpen = Boolean(terminalMenuAnchorEl);
+
 	return (
 		<Box
 			sx={{
@@ -67,46 +75,80 @@ const Cart = ({
 		>
 			{/* dropdown to select terminal */}
 			<FormControl fullWidth>
-				{terminals.length > 0 && (
-					<>
-						<Box
-							sx={{
-								display: "flex",
-								justifyContent: "flex-start",
-								mb: 1,
+				<>
+					<Box
+						sx={{
+							display: "flex",
+							justifyContent: "flex-start",
+							mb: 1,
+						}}
+					>
+						<IconButton
+							sx={{ ml: "auto" }}
+							aria-controls={
+								menuOpen ? "terminal-menu" : undefined
+							}
+							aria-haspopup="true"
+							aria-expanded={menuOpen ? "true" : undefined}
+							onClick={(e) => setMenuAnchorEl(e.currentTarget)}
+						>
+							<HamburgerMenuIcon />
+						</IconButton>
+						<Menu
+							id="terminal-menu"
+							anchorEl={menuAnchorEl}
+							open={menuOpen}
+							onClose={() => setMenuAnchorEl(null)}
+							MenuListProps={{
+								"aria-labelledby": "terminal-button",
 							}}
 						>
-							<Button
+							<MenuItem
+								onClick={(e) =>
+									setTerminalMenuAnchorEl(e.currentTarget)
+								}
+							>
+								Select Terminal
+							</MenuItem>
+							<MenuItem onClick={openManual}>Manual UPC</MenuItem>
+							<MenuItem
 								onClick={() => {
 									window.document.documentElement.requestFullscreen();
 								}}
 							>
-								{" "}
 								Fullscreen
-							</Button>
-							<Button
-								size="small"
-								onClick={openManual}
-								sx={{ mr: 1 }}
-							>
-								Manual UPC
-							</Button>
-						</Box>
-						<br />
-						<Select
-							value={selectedTerminal}
-							onChange={(e) =>
-								setSelectedTerminal(e.target.value)
-							}
+							</MenuItem>
+						</Menu>
+						<Menu
+							id="terminal-submenu"
+							anchorEl={terminalMenuAnchorEl}
+							open={terminalMenuOpen}
+							onClose={() => setTerminalMenuAnchorEl(null)}
+							anchorOrigin={{
+								vertical: "top",
+								horizontal: "right",
+							}}
+							transformOrigin={{
+								vertical: "top",
+								horizontal: "left",
+							}}
 						>
 							{terminals.map((terminal) => (
-								<MenuItem key={terminal.id} value={terminal}>
+								<MenuItem
+									key={terminal.id}
+									selected={terminal === selectedTerminal}
+									onClick={() => {
+										setSelectedTerminal(terminal);
+										setTerminalMenuAnchorEl(null);
+										setMenuAnchorEl(null);
+									}}
+								>
 									{terminal.label}
 								</MenuItem>
 							))}
-						</Select>
-					</>
-				)}
+						</Menu>
+					</Box>
+				</>
 
 				{/* Manual UPC entry dialog */}
 				<Dialog open={manualOpen} onClose={() => setManualOpen(false)}>
@@ -173,43 +215,40 @@ const Cart = ({
 					p: 0,
 				}}
 			>
-				{cart.length > 0 && (
-					<Box sx={{ mt: 2 }}>
-						{giftcard && (
-							<Box
-								sx={{
-									mb: 1,
-									display: "flex",
-									justifyContent: "space-between",
-									alignItems: "center",
-								}}
-							>
+				<Box sx={{ mt: 2 }}>
+					{giftcard && (
+						<Box
+							sx={{
+								mb: 1,
+								display: "flex",
+								justifyContent: "space-between",
+								alignItems: "center",
+							}}
+						>
+							<div>
+								<strong>Giftcard:</strong>{" "}
+								{(() => {
+									const id = giftcard.dj || "";
+									if (id.length <= 8) return id;
+									return "****" + id.slice(-8);
+								})()}
 								<div>
-									<strong>Giftcard:</strong>{" "}
-									{(() => {
-										const id = giftcard.$id || "";
-										if (id.length <= 8) return id;
-										return "****" + id.slice(-8);
-									})()}
-									<div>
-										Balance:{" "}
-										{formatCAD(giftcard.balance || 0)}
-									</div>
+									Balance: {formatCAD(giftcard.balance || 0)}
 								</div>
-								<Button
-									size="small"
-									onClick={onClearGiftcard}
-									disabled={!!transactionInProgress}
-								>
-									Clear Giftcard
-								</Button>
-							</Box>
-						)}
-						{(() => {
-							return <h3>Subtotal: {formatCAD(total)}</h3>;
-						})()}
-					</Box>
-				)}
+							</div>
+							<Button
+								size="small"
+								onClick={onClearGiftcard}
+								disabled={!!transactionInProgress}
+							>
+								Clear Giftcard
+							</Button>
+						</Box>
+					)}
+					{(() => {
+						return <h3>Subtotal: {formatCAD(total)}</h3>;
+					})()}
+				</Box>
 				<Box
 					sx={{
 						display: "grid",

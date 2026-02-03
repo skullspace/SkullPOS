@@ -10,6 +10,7 @@ export default function createProcessBarcode({
 		// ignore giftcard prefix for now
 		try {
 			if (typeof code === "string" && code.startsWith("75855")) {
+                
 				if (typeof handleGiftcard === "function") {
 					try {
 						handleGiftcard(code);
@@ -41,7 +42,7 @@ export default function createProcessBarcode({
 		});
 
 		if (found) {
-			if (typeof addItemToCart === "function") addItemToCart(found.$id);
+			//if (typeof addItemToCart === "function") addItemToCart(found.$id);
 			if (typeof setStripeAlert === "function") {
 				setStripeAlert({
 					active: true,

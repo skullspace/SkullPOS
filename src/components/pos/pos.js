@@ -337,6 +337,11 @@ const POS = () => {
 	);
 	useEffect(() => {
 		function onKeyDown(e) {
+			// make enter not do anything
+			if (e.key === "Enter") {
+				e.preventDefault();
+			}
+
 			// ignore when typing into inputs/textareas/contenteditable
 			const active = document.activeElement;
 			if (
@@ -397,6 +402,7 @@ const POS = () => {
 		setMemberDiscountApplied(reset.member_discount_applied);
 		setDiscount(reset.discount);
 		setCart(reset.cart);
+		setGiftcard(null);
 	}
 
 	// Create handleCardPayment using the utility factory so UI logic stays thin
