@@ -233,9 +233,9 @@ export function useAppwrite() {
 			cashAmount = 0,
 			cardAmount = 0,
 			discountAmount = 0,
-			amountPaid = 0,
-			revenue = 0;
+			amountPaid = 0;
 
+		// eslint-disable-next-line eqeqeq
 		if (result.documents.length == 0) {
 			return {
 				ItemsSold,
