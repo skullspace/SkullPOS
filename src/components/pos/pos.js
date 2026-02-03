@@ -134,7 +134,7 @@ const POS = () => {
 				type: "info",
 			});
 		},
-		[items]
+		[items],
 	);
 
 	const retryCheckout = () => {
@@ -208,7 +208,7 @@ const POS = () => {
 						await handleCardPayment(
 							transactionId.current,
 							true,
-							remaining
+							remaining,
 						);
 						return;
 					}
@@ -235,7 +235,7 @@ const POS = () => {
 	const calculateTotal = () => {
 		let newTotal = cart.reduce(
 			(acc, item) => acc + item.price * item.quantity,
-			0
+			0,
 		);
 		if (member_discount_applied) {
 			let discountAmount = (newTotal * member_discount) / 100;
@@ -322,7 +322,7 @@ const POS = () => {
 				});
 			}
 		},
-		[databases, config, setStripeAlert]
+		[databases, config, setStripeAlert],
 	);
 
 	const processBarcode = useMemo(
@@ -333,7 +333,7 @@ const POS = () => {
 				setStripeAlert,
 				handleGiftcard,
 			}),
-		[items, addItemToCart, setStripeAlert, handleGiftcard]
+		[items, addItemToCart, setStripeAlert, handleGiftcard],
 	);
 	useEffect(() => {
 		function onKeyDown(e) {
@@ -431,8 +431,9 @@ const POS = () => {
 			formatCAD,
 			total,
 			cart,
-		]
+		],
 	);
+	console.log(items);
 
 	const checkout = useMemo(
 		() =>
@@ -475,7 +476,7 @@ const POS = () => {
 			setCheckoutSuccess,
 			setPaymentMethod,
 			setGiftcardUsage,
-		]
+		],
 	);
 
 	function handleCashPayment() {
@@ -531,7 +532,7 @@ const POS = () => {
 											quantity: 1,
 											amount: -1 * parseInt(discount),
 										},
-								  ]
+									]
 								: []),
 						],
 						total: parseInt(total),

@@ -11,8 +11,8 @@ import { useMemo, useState, useEffect, useCallback } from "react";
 
 // if on localhost, use test mode
 const isLocalhost =
-	(window.location.hostname === "localhost" ||
-	window.location.hostname === "127.0.0.1");
+	window.location.hostname === "localhost" ||
+	window.location.hostname === "127.0.0.1";
 
 const test = isLocalhost;
 
@@ -76,7 +76,7 @@ export function useAppwrite() {
 		try {
 			const data = await databases.listDocuments(
 				config.databases.bar.id,
-				config.databases.bar.collections.categories
+				config.databases.bar.collections.categories,
 			);
 			setCategories(data.documents || []);
 		} catch (err) {
@@ -89,7 +89,7 @@ export function useAppwrite() {
 			const data = await databases.listDocuments({
 				databaseId: config.databases.bar.id,
 				collectionId: config.databases.bar.collections.items,
-				queries: [Query.orderAsc("name")],
+				queries: [Query.orderAsc("name"), Query.limit(1000)],
 			});
 
 			setItems(data.documents || []);
@@ -182,7 +182,7 @@ export function useAppwrite() {
 			console.log("login success", newLoging);
 			return newLoging;
 		},
-		[account]
+		[account],
 	);
 
 	async function logout() {
