@@ -10,7 +10,7 @@ import {
 	TextField,
 	Menu,
 } from "@mui/material";
-import { FormControl, Select, MenuItem, Tooltip } from "@mui/material";
+import { FormControl, MenuItem, Tooltip } from "@mui/material";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import HamburgerMenuIcon from "@mui/icons-material/Menu";
 import MoneyIcon from "@mui/icons-material/AttachMoney";
@@ -84,7 +84,7 @@ const Cart = ({
 						}}
 					>
 						<IconButton
-							sx={{ ml: "auto" }}
+							sx={{ ml: "auto", position: "absolute", right: 0 }}
 							aria-controls={
 								menuOpen ? "terminal-menu" : undefined
 							}
