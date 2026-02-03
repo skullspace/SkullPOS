@@ -50,7 +50,7 @@ const SalesReport = ({ open, onClose }) => {
 
 	React.useEffect(() => {
 		if (open) {
-			handleQuickSelect("48hours");
+			handleQuickSelect("24hours");
 		}
 	}, [open]);
 
@@ -98,11 +98,11 @@ const SalesReport = ({ open, onClose }) => {
 		let start = new Date();
 
 		switch (range) {
-			case "today":
-				start.setHours(0, 0, 0, 0);
+			case "12hours":
+				start.setTime(now.getTime() - 12 * 60 * 60 * 1000);
 				break;
-			case "48hours":
-				start.setTime(now.getTime() - 48 * 60 * 60 * 1000);
+			case "24hours":
+				start.setTime(now.getTime() - 24 * 60 * 60 * 1000);
 				break;
 			case "week":
 				start.setDate(now.getDate() - 7);
@@ -150,16 +150,16 @@ const SalesReport = ({ open, onClose }) => {
 					<Button
 						size="small"
 						variant="outlined"
-						onClick={() => handleQuickSelect("today")}
+						onClick={() => handleQuickSelect("12hours")}
 					>
-						Today
+						Last 12 Hours
 					</Button>
 					<Button
 						size="small"
 						variant="outlined"
-						onClick={() => handleQuickSelect("48hours")}
+						onClick={() => handleQuickSelect("24hours")}
 					>
-						Last 48 Hours
+						Last 24 Hours
 					</Button>
 					<Button
 						size="small"
