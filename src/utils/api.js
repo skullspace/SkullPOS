@@ -209,6 +209,91 @@ export function useAppwrite() {
 		return await account.create(id, email, password, name);
 	}
 
+	async function fetchSalesReport(startDate, endDate) {
+		startDate = new Date(startDate).toISOString();
+		endDate = new Date(endDate).toISOString();
+
+		console.log("Fetching sales report from", startDate, "to", endDate);
+		const result = await databases.listDocuments(
+			"67c9ffd9003d68236514",
+			"68e4cd3500179ce661c6",
+			[
+				Query.equal("status", "complete"),
+				Query.notEqual("testing", true),
+				Query.greaterThanEqual("$createdAt", startDate),
+				Query.lessThanEqual("$createdAt", endDate),
+				Query.limit(10000),
+			],
+		);
+		console.log(result);
+		let ItemsSold = [],
+			totalSales = 0,
+			tips = 0,
+			giftcardAmount = 0,
+			cashAmount = 0,
+			cardAmount = 0,
+			discountAmount = 0,
+			amountPaid = 0,
+			revenue = 0;
+
+		if (result.documents.length == 0) {
+			return {
+				ItemsSold,
+				totalSales,
+				tips,
+				giftcardAmount,
+				cashAmount,
+				cardAmount,
+				discountAmount,
+				amountPaid,
+			};
+		}
+		result.documents.forEach((item) => {
+			let cart = JSON.parse(item.cart);
+			cart.forEach((cartItem) => {
+				if (!ItemsSold.find((i) => i.name === cartItem.name)) {
+					ItemsSold.push({
+						name: cartItem.name,
+						quantity: 0,
+						revenue: 0,
+					});
+				}
+				let existingItem = ItemsSold.find(
+					(i) => i.name === cartItem.name,
+				);
+				existingItem.quantity += cartItem.quantity;
+				let itemCost = 0;
+
+				if (item.discount > 0) {
+					itemCost = cartItem.price / 2;
+				} else itemCost = cartItem.price;
+				revenue += (itemCost * cartItem.quantity) / 100;
+				existingItem.revenue += (itemCost * cartItem.quantity) / 100;
+			});
+			totalSales += item.total + item.discount;
+			amountPaid += item.payment_due;
+			tips += item.tip;
+			discountAmount += item.discount;
+			giftcardAmount += item.giftcard_amount;
+			if (item.payment_method === "cash") {
+				cashAmount += item.payment_due;
+			} else {
+				cardAmount += item.payment_due;
+			}
+		});
+
+		return {
+			ItemsSold,
+			totalSales,
+			tips,
+			giftcardAmount,
+			cashAmount,
+			cardAmount,
+			discountAmount,
+			amountPaid,
+		};
+	}
+
 	return {
 		client,
 		databases,
@@ -226,5 +311,6 @@ export function useAppwrite() {
 		uniqueId: ID.unique,
 		generateStripeConnectionToken,
 		functions,
+		fetchSalesReport,
 	};
 }

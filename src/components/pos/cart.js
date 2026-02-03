@@ -39,6 +39,7 @@ const Cart = ({
 	onClearGiftcard,
 	transactionInProgress,
 	onManualUPCEntry,
+	setOpenSalesReport,
 }) => {
 	const [manualOpen, setManualOpen] = useState(false);
 	const [manualValue, setManualValue] = useState("");
@@ -117,6 +118,9 @@ const Cart = ({
 								}}
 							>
 								Fullscreen
+							</MenuItem>
+							<MenuItem onClick={() => setOpenSalesReport(true)}>
+								Sales Report
 							</MenuItem>
 						</Menu>
 						<Menu

@@ -22,6 +22,7 @@ import {
 } from "@mui/material";
 import { useAppwrite } from "../../utils/api";
 import Item from "./item";
+import SalesReport from "./salesReport";
 import Category from "./category";
 import { formatCAD } from "../../utils/format";
 import { useStripe } from "../../utils/stripe";
@@ -85,6 +86,7 @@ const POS = () => {
 	const [checkoutLoading, setCheckoutLoading] = useState(false);
 	const transactionId = useRef(null);
 	const [cashModalOpen, setCashModalOpen] = useState(false);
+	const [openSalesReport, setOpenSalesReport] = useState(false);
 
 	const localHandleCancelStripePayment = useCallback(() => {
 		handleCancelStripePayment();
@@ -649,6 +651,7 @@ const POS = () => {
 						type: "info",
 					});
 				}}
+				setOpenSalesReport={setOpenSalesReport}
 			/>
 			<Modals
 				cashModalOpen={cashModalOpen}
@@ -684,6 +687,10 @@ const POS = () => {
 					{stripeAlert.message}
 				</Alert>
 			</Collapse>
+			<SalesReport
+				open={openSalesReport}
+				onClose={() => setOpenSalesReport(false)}
+			/>
 		</Box>
 	);
 };
