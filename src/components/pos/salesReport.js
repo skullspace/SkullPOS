@@ -53,6 +53,13 @@ const SalesReport = ({ open, onClose }) => {
 		}
 	}, [open]);
 
+	React.useEffect(() => {
+		if (startDate && endDate) {
+			setLoading(true);
+			getReport(startDate, endDate).finally(() => setLoading(false));
+		}
+	}, [startDate, endDate]);
+
 	const handleSort = (property) => {
 		const isAsc = orderBy === property && order === "asc";
 		setOrder(isAsc ? "desc" : "asc");
@@ -181,6 +188,7 @@ const SalesReport = ({ open, onClose }) => {
 						onChange={(e) => setStartDate(e.target.value)}
 						InputLabelProps={{ shrink: true }}
 						size="small"
+						sx={{ flex: 1 }}
 					/>
 					<TextField
 						type="datetime-local"
@@ -189,10 +197,8 @@ const SalesReport = ({ open, onClose }) => {
 						onChange={(e) => setEndDate(e.target.value)}
 						InputLabelProps={{ shrink: true }}
 						size="small"
+						sx={{ flex: 1 }}
 					/>
-					<Button variant="contained" onClick={handleGenerateReport}>
-						Generate
-					</Button>
 				</Box>
 				<Box
 					sx={{
@@ -202,16 +208,20 @@ const SalesReport = ({ open, onClose }) => {
 					}}
 				>
 					{loading ? (
-						<>
+						<Box
+							sx={{
+								height: "60vh",
+							}}
+						>
 							<CircularProgress size={36} />
 							<Typography id="txn-progress-desc">
 								Please wait while the report is generated...
 							</Typography>
-						</>
+						</Box>
 					) : (
 						<Box
 							sx={{
-								maxHeight: "60vh",
+								height: "60vh",
 								overflow: "auto",
 								width: "100%",
 								p: 2,
