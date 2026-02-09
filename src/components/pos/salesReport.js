@@ -77,6 +77,9 @@ const SalesReport = ({ open, onClose }) => {
 			if (orderBy === "revenue") {
 				aVal = (a.quantity || 0) * (a.revenue || 0);
 				bVal = (b.quantity || 0) * (b.revenue || 0);
+			} else if (orderBy === "cogs") {
+				aVal = a.cogs || 0;
+				bVal = b.cogs || 0;
 			} else if (orderBy === "quantity") {
 				aVal = a.quantity || 0;
 				bVal = b.quantity || 0;
@@ -136,43 +139,22 @@ const SalesReport = ({ open, onClose }) => {
 	};
 
 	return (
-		<Modal
-			open={open}
-			onClose={onClose}
-			aria-labelledby="sales-report-title"
-			style={{ margin: 0 }}
-		>
+		<Modal open={open} onClose={onClose} aria-labelledby="sales-report-title" style={{ margin: 0 }}>
 			<Box sx={modalStyle}>
 				<Typography id="txn-progress-title" variant="h6" component="h2">
 					Sales Report
 				</Typography>
 				<Box sx={{ display: "flex", gap: 1, mb: 2, flexWrap: "wrap" }}>
-					<Button
-						size="small"
-						variant="outlined"
-						onClick={() => handleQuickSelect("12hours")}
-					>
+					<Button size="small" variant="outlined" onClick={() => handleQuickSelect("12hours")}>
 						Last 12 Hours
 					</Button>
-					<Button
-						size="small"
-						variant="outlined"
-						onClick={() => handleQuickSelect("24hours")}
-					>
+					<Button size="small" variant="outlined" onClick={() => handleQuickSelect("24hours")}>
 						Last 24 Hours
 					</Button>
-					<Button
-						size="small"
-						variant="outlined"
-						onClick={() => handleQuickSelect("week")}
-					>
+					<Button size="small" variant="outlined" onClick={() => handleQuickSelect("week")}>
 						Last Week
 					</Button>
-					<Button
-						size="small"
-						variant="outlined"
-						onClick={() => handleQuickSelect("alltime")}
-					>
+					<Button size="small" variant="outlined" onClick={() => handleQuickSelect("alltime")}>
 						All Time
 					</Button>
 				</Box>
@@ -210,9 +192,7 @@ const SalesReport = ({ open, onClose }) => {
 							}}
 						>
 							<CircularProgress size={36} />
-							<Typography id="txn-progress-desc">
-								Please wait while the report is generated...
-							</Typography>
+							<Typography id="txn-progress-desc">Please wait while the report is generated...</Typography>
 						</Box>
 					) : (
 						<Box
@@ -232,14 +212,8 @@ const SalesReport = ({ open, onClose }) => {
 												justifyContent: "space-between",
 											}}
 										>
-											<Typography>
-												Sale Volume:
-											</Typography>
-											<Typography>
-												{formatCAD(
-													reportData.totalSales,
-												)}
-											</Typography>
+											<Typography>Sale Volume:</Typography>
+											<Typography>{formatCAD(reportData.totalSales)}</Typography>
 										</Box>
 										<hr />
 										<Box
@@ -248,14 +222,8 @@ const SalesReport = ({ open, onClose }) => {
 												justifyContent: "space-between",
 											}}
 										>
-											<Typography>
-												Discount Amount:
-											</Typography>
-											<Typography>
-												{formatCAD(
-													reportData.discountAmount,
-												)}
-											</Typography>
+											<Typography>Discount Amount:</Typography>
+											<Typography>{formatCAD(reportData.discountAmount)}</Typography>
 										</Box>
 										<Box
 											sx={{
@@ -263,14 +231,8 @@ const SalesReport = ({ open, onClose }) => {
 												justifyContent: "space-between",
 											}}
 										>
-											<Typography>
-												Gift Card Amount:
-											</Typography>
-											<Typography>
-												{formatCAD(
-													reportData.giftcardAmount,
-												)}
-											</Typography>
+											<Typography>Gift Card Amount:</Typography>
+											<Typography>{formatCAD(reportData.giftcardAmount)}</Typography>
 										</Box>
 										<Box
 											sx={{
@@ -278,12 +240,8 @@ const SalesReport = ({ open, onClose }) => {
 												justifyContent: "space-between",
 											}}
 										>
-											<Typography>
-												Tips Earned:
-											</Typography>
-											<Typography>
-												{formatCAD(reportData.tips)}
-											</Typography>
+											<Typography>Tips Earned:</Typography>
+											<Typography>{formatCAD(reportData.tips)}</Typography>
 										</Box>
 										<hr />
 										<Box
@@ -292,14 +250,8 @@ const SalesReport = ({ open, onClose }) => {
 												justifyContent: "space-between",
 											}}
 										>
-											<Typography>
-												Cash Amount:
-											</Typography>
-											<Typography>
-												{formatCAD(
-													reportData.cashAmount,
-												)}
-											</Typography>
+											<Typography>Cash Amount:</Typography>
+											<Typography>{formatCAD(reportData.cashAmount)}</Typography>
 										</Box>
 										<Box
 											sx={{
@@ -307,14 +259,36 @@ const SalesReport = ({ open, onClose }) => {
 												justifyContent: "space-between",
 											}}
 										>
-											<Typography>
-												Card Amount:
-											</Typography>
-											<Typography>
-												{formatCAD(
-													reportData.cardAmount,
-												)}
-											</Typography>
+											<Typography>Card Amount:</Typography>
+											<Typography>{formatCAD(reportData.cardAmount)}</Typography>
+										</Box>
+										<hr />
+										<Box
+											sx={{
+												display: "flex",
+												justifyContent: "space-between",
+											}}
+										>
+											<Typography>Alcohol Amount:</Typography>
+											<Typography>{formatCAD(reportData.alcoholAmount)}</Typography>
+										</Box>
+										<Box
+											sx={{
+												display: "flex",
+												justifyContent: "space-between",
+											}}
+										>
+											<Typography>Food:</Typography>
+											<Typography>{formatCAD(reportData.foodAmount)}</Typography>
+										</Box>
+										<Box
+											sx={{
+												display: "flex",
+												justifyContent: "space-between",
+											}}
+										>
+											<Typography>Non Alcoholic Drinks Amount:</Typography>
+											<Typography>{formatCAD(reportData.nonAlcoholicDrinksAmount)}</Typography>
 										</Box>
 										<hr />
 										<Box
@@ -324,17 +298,31 @@ const SalesReport = ({ open, onClose }) => {
 											}}
 										>
 											<Typography>Revenue:</Typography>
+											<Typography>{formatCAD(reportData.amountPaid)}</Typography>
+										</Box>
+										<Box
+											sx={{
+												display: "flex",
+												justifyContent: "space-between",
+											}}
+										>
+											<Typography>Cost of Goods Sold:</Typography>
+											<Typography>{formatCAD(reportData.cogs)}</Typography>
+										</Box>
+										<Box
+											sx={{
+												display: "flex",
+												justifyContent: "space-between",
+											}}
+										>
+											<Typography>Profit:</Typography>
 											<Typography>
-												{formatCAD(
-													reportData.amountPaid,
-												)}
+												{formatCAD(reportData.amountPaid - reportData.cogs)}
 											</Typography>
 										</Box>
 									</Box>
 									<hr />
-									<Typography variant="h6">
-										Items Sold
-									</Typography>
+									<Typography variant="h6">Items Sold</Typography>
 									<TableContainer
 										component={Paper}
 										sx={{
@@ -346,89 +334,53 @@ const SalesReport = ({ open, onClose }) => {
 												<TableRow>
 													<TableCell>
 														<TableSortLabel
-															active={
-																orderBy ===
-																"name"
-															}
-															direction={
-																orderBy ===
-																"name"
-																	? order
-																	: "asc"
-															}
-															onClick={() =>
-																handleSort(
-																	"name",
-																)
-															}
+															active={orderBy === "name"}
+															direction={orderBy === "name" ? order : "asc"}
+															onClick={() => handleSort("name")}
 														>
 															Item
 														</TableSortLabel>
 													</TableCell>
 													<TableCell align="right">
 														<TableSortLabel
-															active={
-																orderBy ===
-																"quantity"
-															}
-															direction={
-																orderBy ===
-																"quantity"
-																	? order
-																	: "asc"
-															}
-															onClick={() =>
-																handleSort(
-																	"quantity",
-																)
-															}
+															active={orderBy === "quantity"}
+															direction={orderBy === "quantity" ? order : "asc"}
+															onClick={() => handleSort("quantity")}
 														>
 															Quantity
 														</TableSortLabel>
 													</TableCell>
 													<TableCell align="right">
 														<TableSortLabel
-															active={
-																orderBy ===
-																"revenue"
-															}
-															direction={
-																orderBy ===
-																"revenue"
-																	? order
-																	: "asc"
-															}
-															onClick={() =>
-																handleSort(
-																	"revenue",
-																)
-															}
+															active={orderBy === "revenue"}
+															direction={orderBy === "revenue" ? order : "asc"}
+															onClick={() => handleSort("revenue")}
 														>
 															Revenue
+														</TableSortLabel>
+													</TableCell>
+													<TableCell align="right">
+														<TableSortLabel
+															active={orderBy === "cogs"}
+															direction={orderBy === "cogs" ? order : "asc"}
+															onClick={() => handleSort("cogs")}
+														>
+															COGS
 														</TableSortLabel>
 													</TableCell>
 												</TableRow>
 											</TableHead>
 											<TableBody>
-												{getSortedItems().map(
-													(item, index) => (
-														<TableRow key={index}>
-															<TableCell>
-																{item.name}
-															</TableCell>
-															<TableCell align="right">
-																{item.quantity}
-															</TableCell>
-															<TableCell align="right">
-																{formatCAD(
-																	item.revenue *
-																		100 ||
-																		0,
-																)}
-															</TableCell>
-														</TableRow>
-													),
-												)}
+												{getSortedItems().map((item, index) => (
+													<TableRow key={index}>
+														<TableCell>{item.name}</TableCell>
+														<TableCell align="right">{item.quantity}</TableCell>
+														<TableCell align="right">
+															{formatCAD(item.revenue || 0)}
+														</TableCell>
+														<TableCell align="right">{formatCAD(item.cogs || 0)}</TableCell>
+													</TableRow>
+												))}
 											</TableBody>
 										</Table>
 									</TableContainer>

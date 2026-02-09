@@ -1,25 +1,9 @@
 /* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
-import React, {
-	useState,
-	useEffect,
-	useCallback,
-	useRef,
-	useMemo,
-} from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Cart from "./cart";
 import Modals from "./modals";
-import {
-	FormControl,
-	InputLabel,
-	Select,
-	MenuItem,
-	Alert,
-	Collapse,
-	Box,
-	Button,
-	Modal,
-} from "@mui/material";
+import { FormControl, InputLabel, Select, MenuItem, Alert, Collapse, Box, Button, Modal } from "@mui/material";
 import { useAppwrite } from "../../utils/api";
 import Item from "./item";
 import SalesReport from "./salesReport";
@@ -105,7 +89,6 @@ const POS = () => {
 	const disableItem = useCallback(
 		(itemId, toEnable = false) => {
 			if (toEnable) {
-				console.log("Enabling item:", itemId);
 				databases.updateDocument({
 					databaseId: config.databases.bar.id,
 					collectionId: config.databases.bar.collections.items,
@@ -115,7 +98,6 @@ const POS = () => {
 					},
 				});
 			} else if (!toEnable) {
-				console.log("Disabling item:", itemId);
 				databases.updateDocument({
 					databaseId: config.databases.bar.id,
 					collectionId: config.databases.bar.collections.items,
@@ -125,14 +107,10 @@ const POS = () => {
 					},
 				});
 			}
-			let itemName =
-				items.find((item) => item.$id === itemId)?.name ||
-				"Unknown Item";
+			let itemName = items.find((item) => item.$id === itemId)?.name || "Unknown Item";
 			setStripeAlert({
 				active: true,
-				message: `Item ${
-					toEnable ? "enabled" : "disabled"
-				}: ${itemName}`,
+				message: `Item ${toEnable ? "enabled" : "disabled"}: ${itemName}`,
 				type: "info",
 			});
 		},
@@ -172,15 +150,13 @@ const POS = () => {
 				try {
 					await databases.updateDocument({
 						databaseId: config.databases.bar.id,
-						collectionId:
-							config.databases.bar.collections.transactions,
+						collectionId: config.databases.bar.collections.transactions,
 						documentId: transactionId.current,
 						data: {
 							giftcards: [gift.$id],
 							giftcard_amount: applied,
 							payment_due: remaining,
-							payment_method:
-								remaining > 0 ? "giftcard+stripe" : "giftcard",
+							payment_method: remaining > 0 ? "giftcard+stripe" : "giftcard",
 							status: remaining > 0 ? "pending" : "complete",
 						},
 					});
@@ -188,14 +164,12 @@ const POS = () => {
 					const newBalance = giftBalance - applied;
 					await databases.updateDocument({
 						databaseId: config.databases.bar.id,
-						collectionId:
-							config.databases.bar.collections.giftcards,
+						collectionId: config.databases.bar.collections.giftcards,
 						documentId: gift.$id,
 						data: { balance: newBalance },
 					});
 
-					setGiftcard &&
-						setGiftcard({ ...gift, balance: newBalance });
+					setGiftcard && setGiftcard({ ...gift, balance: newBalance });
 
 					if (remaining <= 0) {
 						setTransactionInProgress(false);
@@ -207,11 +181,7 @@ const POS = () => {
 
 					// partial: charge remainder via card
 					if (handleCardPayment) {
-						await handleCardPayment(
-							transactionId.current,
-							true,
-							remaining,
-						);
+						await handleCardPayment(transactionId.current, true, remaining);
 						return;
 					}
 				} catch (err) {
@@ -235,10 +205,7 @@ const POS = () => {
 	};
 
 	const calculateTotal = () => {
-		let newTotal = cart.reduce(
-			(acc, item) => acc + item.price * item.quantity,
-			0,
-		);
+		let newTotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
 		if (member_discount_applied) {
 			let discountAmount = (newTotal * member_discount) / 100;
 			discountAmount = parseInt(discountAmount);
@@ -293,8 +260,7 @@ const POS = () => {
 					const upc = d.UPC;
 					if (!upc) return false;
 					if (Array.isArray(upc)) return upc.includes(code);
-					if (typeof upc === "string")
-						return upc === code || upc.includes(code);
+					if (typeof upc === "string") return upc === code || upc.includes(code);
 					return false;
 				});
 
@@ -346,12 +312,7 @@ const POS = () => {
 
 			// ignore when typing into inputs/textareas/contenteditable
 			const active = document.activeElement;
-			if (
-				active &&
-				(active.tagName === "INPUT" ||
-					active.tagName === "TEXTAREA" ||
-					active.isContentEditable)
-			) {
+			if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) {
 				return;
 			}
 
@@ -441,7 +402,6 @@ const POS = () => {
 			cart,
 		],
 	);
-	console.log(items);
 
 	const checkout = useMemo(
 		() =>
@@ -522,21 +482,14 @@ const POS = () => {
 					cart: {
 						line_items: [
 							...cart.map((item) => ({
-								description:
-									item.name +
-									"\n\t\t(" +
-									formatCAD(item.price) +
-									"/ea)",
+								description: item.name + "\n\t\t(" + formatCAD(item.price) + "/ea)",
 								quantity: item.quantity,
 								amount: parseInt(item.price) * item.quantity,
 							})),
 							...(member_discount_applied
 								? [
 										{
-											description:
-												"Member Discount\n\t\t(" +
-												member_discount +
-												"% off)",
+											description: "Member Discount\n\t\t(" + member_discount + "% off)",
 											quantity: 1,
 											amount: -1 * parseInt(discount),
 										},
@@ -567,13 +520,7 @@ const POS = () => {
 		refreshCategories();
 		refreshItems();
 		refreshData();
-	}, [
-		categories.length,
-		items.length,
-		refreshCategories,
-		refreshItems,
-		refreshData,
-	]);
+	}, [categories.length, items.length, refreshCategories, refreshItems, refreshData]);
 
 	return (
 		<Box sx={{ display: "flex", height: "100vh" }}>
@@ -687,10 +634,7 @@ const POS = () => {
 					{stripeAlert.message}
 				</Alert>
 			</Collapse>
-			<SalesReport
-				open={openSalesReport}
-				onClose={() => setOpenSalesReport(false)}
-			/>
+			<SalesReport open={openSalesReport} onClose={() => setOpenSalesReport(false)} />
 		</Box>
 	);
 };

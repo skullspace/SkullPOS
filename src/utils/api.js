@@ -1,18 +1,9 @@
-import {
-	Client as Appwrite,
-	Databases,
-	Account,
-	ID,
-	Functions,
-	Query,
-} from "appwrite";
+import { Client as Appwrite, Databases, Account, ID, Functions, Query } from "appwrite";
 
 import { useMemo, useState, useEffect, useCallback } from "react";
 
 // if on localhost, use test mode
-const isLocalhost =
-	window.location.hostname === "localhost" ||
-	window.location.hostname === "127.0.0.1";
+const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
 const test = isLocalhost;
 
@@ -134,9 +125,7 @@ export function useAppwrite() {
 		try {
 			const response = await functions.createExecution({
 				functionId: "68f2904a00171e8b0266",
-				body: test
-					? JSON.stringify({ test: "test" })
-					: JSON.stringify({}),
+				body: test ? JSON.stringify({ test: "test" }) : JSON.stringify({}),
 			});
 			const data = JSON.parse(response.responseBody);
 			return data.secret;
@@ -213,19 +202,13 @@ export function useAppwrite() {
 		startDate = new Date(startDate).toISOString();
 		endDate = new Date(endDate).toISOString();
 
-		console.log("Fetching sales report from", startDate, "to", endDate);
-		const result = await databases.listDocuments(
-			"67c9ffd9003d68236514",
-			"68e4cd3500179ce661c6",
-			[
-				Query.equal("status", "complete"),
-				Query.notEqual("testing", true),
-				Query.greaterThanEqual("$createdAt", startDate),
-				Query.lessThanEqual("$createdAt", endDate),
-				Query.limit(10000),
-			],
-		);
-		console.log(result);
+		const result = await databases.listDocuments("67c9ffd9003d68236514", "68e4cd3500179ce661c6", [
+			Query.equal("status", "complete"),
+			Query.notEqual("testing", true),
+			Query.greaterThanEqual("$createdAt", startDate),
+			Query.lessThanEqual("$createdAt", endDate),
+			Query.limit(10000),
+		]);
 		let ItemsSold = [],
 			totalSales = 0,
 			tips = 0,
@@ -233,7 +216,11 @@ export function useAppwrite() {
 			cashAmount = 0,
 			cardAmount = 0,
 			discountAmount = 0,
-			amountPaid = 0;
+			cogs = 0,
+			amountPaid = 0,
+			alcoholAmount = 0,
+			foodAmount = 0,
+			nonAlcoholicDrinksAmount = 0;
 
 		// eslint-disable-next-line eqeqeq
 		if (result.documents.length == 0) {
@@ -246,6 +233,10 @@ export function useAppwrite() {
 				cardAmount,
 				discountAmount,
 				amountPaid,
+				cogs,
+				alcoholAmount,
+				foodAmount,
+				nonAlcoholicDrinksAmount,
 			};
 		}
 		result.documents.forEach((item) => {
@@ -256,18 +247,35 @@ export function useAppwrite() {
 						name: cartItem.name,
 						quantity: 0,
 						revenue: 0,
+						cogs: 0,
 					});
 				}
-				let existingItem = ItemsSold.find(
-					(i) => i.name === cartItem.name,
-				);
+				let existingItem = ItemsSold.find((i) => i.name === cartItem.name);
 				existingItem.quantity += cartItem.quantity;
 				let itemCost = 0;
 
 				if (item.discount > 0) {
 					itemCost = cartItem.price / 2;
 				} else itemCost = cartItem.price;
-				existingItem.revenue += (itemCost * cartItem.quantity) / 100;
+				existingItem.revenue += itemCost * cartItem.quantity;
+
+				// calculate cogs
+
+				if (cartItem.container_cost) {
+					let itemCost = cartItem.container_cost / cartItem.drinks_per_cont;
+					itemCost = itemCost + (cartItem.additional_drink_cost || 0);
+					const itemCogs = itemCost * cartItem.quantity;
+					existingItem.cogs += itemCogs;
+					cogs += itemCogs;
+				}
+
+				if (cartItem.categories === "67ca019f002d6527c90b" || cartItem.category === "67ca01900011bbccfe20") {
+					alcoholAmount += itemCost * cartItem.quantity;
+				} else if (cartItem.categories === "67ca01ac000c3b35244c") {
+					foodAmount += itemCost * cartItem.quantity;
+				} else if (cartItem.categories === "67ca01a60004cb37ca0c") {
+					nonAlcoholicDrinksAmount += itemCost * cartItem.quantity;
+				}
 			});
 			totalSales += item.total + item.discount;
 			amountPaid += item.payment_due;
@@ -290,6 +298,10 @@ export function useAppwrite() {
 			cardAmount,
 			discountAmount,
 			amountPaid,
+			cogs,
+			alcoholAmount,
+			foodAmount,
+			nonAlcoholicDrinksAmount,
 		};
 	}
 

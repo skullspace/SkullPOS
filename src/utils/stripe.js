@@ -3,9 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { loadStripeTerminal } from "@stripe/terminal-js";
 
 // if on localhost, use test mode
-const isLocalhost =
-	window.location.hostname === "localhost" ||
-	window.location.hostname === "127.0.0.1";
+const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
 const test = isLocalhost;
 
@@ -70,10 +68,7 @@ export function useStripe() {
 					location: "tml_GO9PRw37uKAph5",
 				};
 			}
-			const discoverResult = await terminal.current.discoverReaders(
-				config
-			);
-			console.log("discoverResult", discoverResult);
+			const discoverResult = await terminal.current.discoverReaders(config);
 			if (discoverResult.error) {
 				setStripeAlert({
 					active: true,
@@ -87,9 +82,7 @@ export function useStripe() {
 					type: "error",
 				});
 			} else {
-				const onlineReaders = discoverResult.discoveredReaders.filter(
-					(reader) => reader.status === "online"
-				);
+				const onlineReaders = discoverResult.discoveredReaders.filter((reader) => reader.status === "online");
 
 				if (onlineReaders.length === 0) {
 					setStripeAlert({
@@ -122,7 +115,7 @@ export function useStripe() {
 			// Handle the unexpected disconnection
 			getTerminals();
 		},
-		[getTerminals]
+		[getTerminals],
 	);
 
 	const initializeTerminal = useCallback(async () => {
@@ -195,7 +188,7 @@ export function useStripe() {
 				});
 			}
 		},
-		[functions]
+		[functions],
 	);
 
 	const handleCancelStripePayment = useCallback(async () => {
@@ -231,9 +224,7 @@ export function useStripe() {
 
 	function chargeCard(amountCents, retrying = false) {
 		if (amountCents <= 50) {
-			return Promise.reject(
-				new Error("Amount must be greater than 50 cents")
-			);
+			return Promise.reject(new Error("Amount must be greater than 50 cents"));
 		}
 
 		return new Promise(async (resolve, reject) => {
@@ -245,27 +236,19 @@ export function useStripe() {
 				localChargeID = chargeID.current;
 			}
 
-			const collectResult = await terminal.current.collectPaymentMethod(
-				localChargeID,
-				{
-					config_override: {
-						enable_customer_cancellation: true,
-						update_payment_intent: true,
-					},
-				}
-			);
+			const collectResult = await terminal.current.collectPaymentMethod(localChargeID, {
+				config_override: {
+					enable_customer_cancellation: true,
+					update_payment_intent: true,
+				},
+			});
 
 			if (collectResult.error) {
-				console.error(
-					"Error collecting payment method:",
-					collectResult.error
-				);
+				console.error("Error collecting payment method:", collectResult.error);
 				reject(collectResult.error);
 				return;
 			}
-			const processResult = await terminal.current.processPayment(
-				collectResult.paymentIntent
-			);
+			const processResult = await terminal.current.processPayment(collectResult.paymentIntent);
 
 			if (processResult.error) {
 				console.error("Error processing payment:", processResult.error);
@@ -280,15 +263,8 @@ export function useStripe() {
 			} else if (finalPaymentIntent.status === "succeeded") {
 				resolve(finalPaymentIntent);
 			} else {
-				console.error(
-					"Payment Intent ended in an unexpected status:",
-					finalPaymentIntent.status
-				);
-				reject(
-					new Error(
-						`Unexpected PI status: ${finalPaymentIntent.status}`
-					)
-				);
+				console.error("Payment Intent ended in an unexpected status:", finalPaymentIntent.status);
+				reject(new Error(`Unexpected PI status: ${finalPaymentIntent.status}`));
 			}
 		});
 	}
@@ -300,14 +276,9 @@ export function useStripe() {
 
 	useEffect(() => {
 		async function connectToReader() {
-			const connectResult = await terminal.current.connectReader(
-				selectedTerminal
-			);
+			const connectResult = await terminal.current.connectReader(selectedTerminal);
 			if (connectResult.error) {
-				console.error(
-					"Failed to connect to reader:",
-					connectResult.error
-				);
+				console.error("Failed to connect to reader:", connectResult.error);
 				setStripeAlert({
 					active: true,
 					message: "Failed to connect to reader",
