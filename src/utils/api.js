@@ -263,7 +263,7 @@ export function useAppwrite() {
 
 				if (cartItem.container_cost) {
 					let itemCost = cartItem.container_cost / cartItem.drinks_per_cont;
-					itemCost = itemCost + (cartItem.additional_drink_cost || 0);
+					itemCost = itemCost + (cartItem.additional_drink_costs || 0);
 					const itemCogs = itemCost * cartItem.quantity;
 					existingItem.cogs += itemCogs;
 					cogs += itemCogs;
