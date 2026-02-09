@@ -220,7 +220,8 @@ export function useAppwrite() {
 			amountPaid = 0,
 			alcoholAmount = 0,
 			foodAmount = 0,
-			nonAlcoholicDrinksAmount = 0;
+			nonAlcoholicDrinksAmount = 0,
+			otherAmountSold = 0;
 
 		// eslint-disable-next-line eqeqeq
 		if (result.documents.length == 0) {
@@ -237,6 +238,7 @@ export function useAppwrite() {
 				alcoholAmount,
 				foodAmount,
 				nonAlcoholicDrinksAmount,
+				otherAmountSold,
 			};
 		}
 		result.documents.forEach((item) => {
@@ -252,29 +254,30 @@ export function useAppwrite() {
 				}
 				let existingItem = ItemsSold.find((i) => i.name === cartItem.name);
 				existingItem.quantity += cartItem.quantity;
-				let itemCost = 0;
+				let itemCost = cartItem.price;
 
-				if (item.discount > 0) {
-					itemCost = cartItem.price / 2;
-				} else itemCost = cartItem.price;
 				existingItem.revenue += itemCost * cartItem.quantity;
 
-				// calculate cogs
-
-				if (cartItem.container_cost) {
-					let itemCost = cartItem.container_cost / cartItem.drinks_per_cont;
-					itemCost = itemCost + (cartItem.additional_drink_costs || 0);
-					const itemCogs = itemCost * cartItem.quantity;
-					existingItem.cogs += itemCogs;
-					cogs += itemCogs;
-				}
-
-				if (cartItem.categories === "67ca019f002d6527c90b" || cartItem.category === "67ca01900011bbccfe20") {
+				if (cartItem.categories === "67ca019f002d6527c90b" || cartItem.categories === "67ca01900011bbccfe20") {
 					alcoholAmount += itemCost * cartItem.quantity;
+					console.log("alcohol ", cartItem.name);
 				} else if (cartItem.categories === "67ca01ac000c3b35244c") {
 					foodAmount += itemCost * cartItem.quantity;
 				} else if (cartItem.categories === "67ca01a60004cb37ca0c") {
 					nonAlcoholicDrinksAmount += itemCost * cartItem.quantity;
+				} else {
+					console.log("other ", cartItem.name);
+					otherAmountSold += itemCost * cartItem.quantity;
+				}
+
+				// calculate cogs
+
+				if (cartItem.container_cost) {
+					let itemCoGS = cartItem.container_cost / cartItem.drinks_per_cont;
+					itemCoGS = itemCoGS + (cartItem.additional_drink_costs || 0);
+					const itemCogs = itemCoGS * cartItem.quantity;
+					existingItem.cogs += itemCogs;
+					cogs += itemCogs;
 				}
 			});
 			totalSales += item.total + item.discount;
@@ -302,6 +305,7 @@ export function useAppwrite() {
 			alcoholAmount,
 			foodAmount,
 			nonAlcoholicDrinksAmount,
+			otherAmountSold,
 		};
 	}
 

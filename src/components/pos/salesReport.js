@@ -222,6 +222,35 @@ const SalesReport = ({ open, onClose }) => {
 												justifyContent: "space-between",
 											}}
 										>
+											<Typography>Alcohol:</Typography>
+											<Typography>{formatCAD(reportData.alcoholAmount)}</Typography>
+										</Box>
+										<Box
+											sx={{
+												display: "flex",
+												justifyContent: "space-between",
+											}}
+										>
+											<Typography>Food:</Typography>
+											<Typography>{formatCAD(reportData.foodAmount)}</Typography>
+										</Box>
+										<Box
+											sx={{
+												display: "flex",
+												justifyContent: "space-between",
+											}}
+										>
+											<Typography>Non Alcoholic Drinks:</Typography>
+											<Typography>{formatCAD(reportData.nonAlcoholicDrinksAmount)}</Typography>
+										</Box>
+
+										<hr />
+										<Box
+											sx={{
+												display: "flex",
+												justifyContent: "space-between",
+											}}
+										>
 											<Typography>Discount Amount:</Typography>
 											<Typography>{formatCAD(reportData.discountAmount)}</Typography>
 										</Box>
@@ -261,34 +290,6 @@ const SalesReport = ({ open, onClose }) => {
 										>
 											<Typography>Card Amount:</Typography>
 											<Typography>{formatCAD(reportData.cardAmount)}</Typography>
-										</Box>
-										<hr />
-										<Box
-											sx={{
-												display: "flex",
-												justifyContent: "space-between",
-											}}
-										>
-											<Typography>Alcohol Amount:</Typography>
-											<Typography>{formatCAD(reportData.alcoholAmount)}</Typography>
-										</Box>
-										<Box
-											sx={{
-												display: "flex",
-												justifyContent: "space-between",
-											}}
-										>
-											<Typography>Food:</Typography>
-											<Typography>{formatCAD(reportData.foodAmount)}</Typography>
-										</Box>
-										<Box
-											sx={{
-												display: "flex",
-												justifyContent: "space-between",
-											}}
-										>
-											<Typography>Non Alcoholic Drinks Amount:</Typography>
-											<Typography>{formatCAD(reportData.nonAlcoholicDrinksAmount)}</Typography>
 										</Box>
 										<hr />
 										<Box
