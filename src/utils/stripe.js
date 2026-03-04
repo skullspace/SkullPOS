@@ -51,7 +51,7 @@ export function useStripe() {
 	const getTerminals = useCallback(async () => {
 		setStripeAlert({
 			active: true,
-			message: "Connecting to Stripe Terminal...",
+			message: "Connecting to Terminal...",
 			type: "info",
 			autoExpire: false,
 		});
