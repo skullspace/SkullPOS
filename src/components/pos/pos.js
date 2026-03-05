@@ -19,6 +19,8 @@ import {
 	clearCartState as clearCartStateUtil,
 } from "../../utils/cartUtils";
 import { type } from "@testing-library/user-event/dist/type";
+import {Query } from "appwrite";
+
 
 const POS = () => {
 	const {
