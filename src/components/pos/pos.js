@@ -254,7 +254,6 @@ const POS = () => {
 			try {
 				const res = await databases.listDocuments(config.databases.bar.id,
 					collectionId,
-
 					[
 						Query.limit(10000)]
 				);
