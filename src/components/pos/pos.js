@@ -19,7 +19,7 @@ import {
 	clearCartState as clearCartStateUtil,
 } from "../../utils/cartUtils";
 import { type } from "@testing-library/user-event/dist/type";
-import {Query } from "appwrite";
+import { Query } from "appwrite";
 
 
 const POS = () => {
@@ -252,12 +252,12 @@ const POS = () => {
 			}
 
 			try {
-				const res = await databases.listDocuments({
-					databaseId: config.databases.bar.id,
+				const res = await databases.listDocuments(config.databases.bar.id,
 					collectionId,
-					
-				},[
-						Query.limit(10000)]);
+
+					[
+						Query.limit(10000)]
+				);
 
 				const docs = res.documents || [];
 				const found = docs.find((d) => {
@@ -492,12 +492,12 @@ const POS = () => {
 							})),
 							...(member_discount_applied
 								? [
-										{
-											description: "Member Discount\n\t\t(" + member_discount + "% off)",
-											quantity: 1,
-											amount: -1 * parseInt(discount),
-										},
-									]
+									{
+										description: "Member Discount\n\t\t(" + member_discount + "% off)",
+										quantity: 1,
+										amount: -1 * parseInt(discount),
+									},
+								]
 								: []),
 						],
 						total: parseInt(total),
