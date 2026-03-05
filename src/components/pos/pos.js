@@ -253,6 +253,8 @@ const POS = () => {
 				const res = await databases.listDocuments({
 					databaseId: config.databases.bar.id,
 					collectionId,
+					// remove fetch limit to allow searching entire collection for matching giftcard code
+					limit: 1000,
 				});
 
 				const docs = res.documents || [];
