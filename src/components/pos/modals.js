@@ -36,6 +36,8 @@ const Modals = ({
 	handleCancelStripePayment,
 	stopTransactionInProgress,
 	paymentMethod,
+	clearCart,
+	setChangeDue
 }) => {
 	if (transactionInProgress) {
 		return (
@@ -242,6 +244,7 @@ const Modals = ({
 						<Button onClick={() => {
 							setCheckoutSuccess(false)
 							setChangeDue(0);
+							clearCart();
 						}}>
 							Close
 						</Button>

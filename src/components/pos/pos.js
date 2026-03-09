@@ -620,6 +620,8 @@ const POS = () => {
 				handleCancelStripePayment={localHandleCancelStripePayment}
 				stopTransactionInProgress={stopTransactionInProgress}
 				paymentMethod={paymentMethod}
+				clearCart={clearCart}
+				setChangeDue={setChangeDue}
 			/>
 			<Collapse id="primaryAlert" in={stripeAlert.active}>
 				<Alert
