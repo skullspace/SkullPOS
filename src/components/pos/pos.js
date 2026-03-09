@@ -466,7 +466,6 @@ const POS = () => {
 		clearCart();
 		setPaymentMethod("stripe");
 		setAmountReceived(0);
-		setChangeDue(0);
 		databases.updateDocument({
 			databaseId: config.databases.bar.id,
 			collectionId: config.databases.bar.collections.transactions,

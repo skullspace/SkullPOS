@@ -239,7 +239,10 @@ const Modals = ({
 							mt: 3,
 						}}
 					>
-						<Button onClick={() => setCheckoutSuccess(false)}>
+						<Button onClick={() => {
+							setCheckoutSuccess(false)
+							setChangeDue(0);
+						}}>
 							Close
 						</Button>
 					</Box>
