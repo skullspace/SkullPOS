@@ -6,7 +6,7 @@ const imgurl = (file) => {
 	return `https://api.cloud.shotty.tech/v1/storage/buckets/67ca0bcc002993f0ef2f/files/${file}/view?project=68f2ac7b00002e7563a8`;
 };
 
-const Item = ({ item, onAdd, disableItem }) => {
+const Item = ({ item, onAdd, disableItem, quantityInCart = 0 }) => {
 	const longPressTimeout = React.useRef(null);
 	const longPressTriggered = React.useRef(false);
 	const pointerIdRef = React.useRef(null);
@@ -79,7 +79,7 @@ const Item = ({ item, onAdd, disableItem }) => {
 			variant="contained"
 			color="primary"
 			sx={{
-				height: "13vh",
+				width: "100%",
 				aspectRatio: "1",
 				borderRadius: "10px",
 				p: 1.25,
@@ -95,7 +95,6 @@ const Item = ({ item, onAdd, disableItem }) => {
 					"0 2px 6px rgba(255, 255, 255, 0.12)",
 				transition: "transform 120ms ease, box-shadow 120ms ease",
 				position: "relative",
-				textOutline: "5px solid black",
 				"&::before": {
 					content: '""',
 					position: "absolute",
@@ -131,6 +130,30 @@ const Item = ({ item, onAdd, disableItem }) => {
 					: {}),
 			}}
 		>
+			{quantityInCart > 0 && (
+				<Box
+					sx={{
+						position: "absolute",
+						top: 6,
+						right: 6,
+						zIndex: 3,
+						minWidth: 22,
+						height: 22,
+						borderRadius: "11px",
+						px: 0.75,
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						fontSize: "0.85rem",
+						fontWeight: 700,
+						color: "primary.contrastText",
+						backgroundColor: "secondary.main",
+						boxShadow: 2,
+					}}
+				>
+					{quantityInCart}
+				</Box>
+			)}
 			<Box
 				className="itemContent"
 				sx={{
@@ -140,7 +163,7 @@ const Item = ({ item, onAdd, disableItem }) => {
 				}}
 			>
 				<Typography
-					level="h6"
+					variant="h6"
 					sx={{
 						fontSize: "1.6rem",
 						fontWeight: 600,
@@ -148,6 +171,7 @@ const Item = ({ item, onAdd, disableItem }) => {
 						wordBreak: "break-word",
 						overflowWrap: "anywhere",
 						mb: 0.25,
+						textShadow: "0 1px 3px rgba(0,0,0,0.9)",
 					}}
 				>
 					{item.name}
@@ -165,7 +189,7 @@ const Item = ({ item, onAdd, disableItem }) => {
 				}}
 			>
 				<Typography
-					level="body2"
+					variant="body2"
 					sx={{
 						color: "text.secondary",
 						fontSize: "0.8rem",
@@ -173,6 +197,7 @@ const Item = ({ item, onAdd, disableItem }) => {
 						wordBreak: "break-word",
 						overflowWrap: "anywhere",
 						mb: 0.75,
+						textShadow: "0 1px 2px rgba(0,0,0,0.9)",
 					}}
 				>
 					{item.description}
@@ -181,7 +206,7 @@ const Item = ({ item, onAdd, disableItem }) => {
 				<Box sx={{ display: "flex", justifyContent: "flex-end" }}>
 					<Chip
 						label={formatCAD(item.price)}
-						color="neutral"
+						color="default"
 						size="small"
 						sx={{
 							fontWeight: 600,

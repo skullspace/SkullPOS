@@ -64,9 +64,8 @@ const Cart = ({
 	return (
 		<Box
 			sx={{
-				width: "25vw",
-				minWidth: 240,
-				maxWidth: "30%",
+				width: "clamp(340px, 25vw, 480px)",
+				flexShrink: 0,
 				p: 2,
 				display: "flex",
 				flexDirection: "column",
@@ -84,7 +83,7 @@ const Cart = ({
 						}}
 					>
 						<IconButton
-							sx={{ ml: "auto", position: "absolute", right: 0 }}
+							sx={{ ml: "auto" }}
 							aria-controls={
 								menuOpen ? "terminal-menu" : undefined
 							}
@@ -224,9 +223,21 @@ const Cart = ({
 						onClear={onClearGiftcard}
 						isProcessing={!!transactionInProgress}
 					/>
-					{(() => {
-						return <h3>Subtotal: {formatCAD(total)}</h3>;
-					})()}
+					<Box
+						sx={{
+							display: "flex",
+							justifyContent: "space-between",
+							alignItems: "baseline",
+							mb: 1,
+						}}
+					>
+						<Box component="span" sx={{ color: "text.secondary", fontSize: "1rem" }}>
+							Subtotal
+						</Box>
+						<Box component="span" sx={{ fontWeight: 800, fontSize: "1.8rem" }}>
+							{formatCAD(total)}
+						</Box>
+					</Box>
 				</Box>
 				<PaymentMethodButtons
 					currentMethod={paymentMethod}

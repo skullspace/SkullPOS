@@ -20,12 +20,13 @@ import { Alert, Collapse } from "@mui/material";
  */
 const AlertNotification = ({ isOpen, message, severity = "info", onClose }) => {
 	return (
-		<Collapse id="alertNotification" in={isOpen}>
+		<Collapse id="primaryAlert" in={isOpen}>
 			<Alert
 				variant="filled"
 				open={isOpen}
 				onClose={onClose}
 				severity={severity}
+				sx={{ boxShadow: 4 }}
 			>
 				{message}
 			</Alert>

@@ -16,6 +16,7 @@ import {
 	Typography,
 	FormControl,
 	FormLabel,
+	Paper,
 } from "@mui/material";
 
 /**
@@ -54,59 +55,67 @@ const AuthForm = ({
 				padding: 2,
 			}}
 		>
-			<Typography level="h4" component="h1" sx={{ mb: 2 }}>
-				{title}
-			</Typography>
-			<form
-				onSubmit={onSubmit}
-				style={{ width: "100%", maxWidth: 400 }}
+			<Paper
+				elevation={4}
+				sx={{
+					width: "100%",
+					maxWidth: 400,
+					p: 4,
+					borderRadius: 3,
+				}}
 			>
-				{/* Render form fields */}
-				{fields.map((field) => (
-					<FormControl key={field.name} required>
-						<FormLabel>{field.label}</FormLabel>
-						<Input
-							type={field.type || "text"}
-							value={values[field.name] || ""}
-							onChange={(e) => onFieldChange(field.name, e.target.value)}
-							sx={{ mb: 2 }}
-						/>
-					</FormControl>
-				))}
+				<Typography variant="h4" component="h1" align="center" sx={{ mb: 3 }}>
+					{title}
+				</Typography>
+				<form onSubmit={onSubmit}>
+					{/* Render form fields */}
+					{fields.map((field) => (
+						<FormControl key={field.name} required fullWidth>
+							<FormLabel>{field.label}</FormLabel>
+							<Input
+								type={field.type || "text"}
+								value={values[field.name] || ""}
+								onChange={(e) => onFieldChange(field.name, e.target.value)}
+								sx={{ mb: 2 }}
+							/>
+						</FormControl>
+					))}
 
-				{/* Error message display */}
-				{errorMessage && (
-					<Typography level="body2" color="danger" sx={{ mb: 2 }}>
-						{errorMessage}
-					</Typography>
-				)}
+					{/* Error message display */}
+					{errorMessage && (
+						<Typography variant="body2" color="error" sx={{ mb: 2 }}>
+							{errorMessage}
+						</Typography>
+					)}
 
-				{/* Submit button */}
-				<Button
-					type="submit"
-					variant="solid"
-					color="primary"
-					fullWidth
-					sx={{ mb: 1 }}
-				>
-					{submitButtonLabel}
-				</Button>
-
-				{/* Secondary actions (e.g., "Register" from login) */}
-				{secondaryActions.map((action, index) => (
+					{/* Submit button */}
 					<Button
-						key={index}
-						type="button"
-						variant="outlined"
-						color="neutral"
+						type="submit"
+						variant="contained"
+						color="primary"
+						size="large"
 						fullWidth
-						onClick={action.onClick}
-						sx={{ mb: index < secondaryActions.length - 1 ? 1 : 0 }}
+						sx={{ mb: 1 }}
 					>
-						{action.label}
+						{submitButtonLabel}
 					</Button>
-				))}
-			</form>
+
+					{/* Secondary actions (e.g., "Register" from login) */}
+					{secondaryActions.map((action, index) => (
+						<Button
+							key={index}
+							type="button"
+							variant="outlined"
+							color="inherit"
+							fullWidth
+							onClick={action.onClick}
+							sx={{ mb: index < secondaryActions.length - 1 ? 1 : 0 }}
+						>
+							{action.label}
+						</Button>
+					))}
+				</form>
+			</Paper>
 		</Box>
 	);
 };

@@ -59,8 +59,9 @@ const CheckoutButton = ({
 							<Button
 								color="primary"
 								variant="contained"
+								size="large"
 								fullWidth
-								sx={{ mt: 0 }}
+								sx={{ mt: 0, fontWeight: 700, py: 1.25 }}
 								onClick={onCheckout}
 								disabled
 							>
@@ -77,8 +78,9 @@ const CheckoutButton = ({
 							<Button
 								color="primary"
 								variant="contained"
+								size="large"
 								fullWidth
-								sx={{ mt: 0 }}
+								sx={{ mt: 0, fontWeight: 700, py: 1.25 }}
 								onClick={onCheckout}
 								disabled
 							>
@@ -91,8 +93,9 @@ const CheckoutButton = ({
 					<Button
 						color="primary"
 						variant="contained"
+						size="large"
 						fullWidth
-						sx={{ mt: 0 }}
+						sx={{ mt: 0, fontWeight: 700, py: 1.25 }}
 						onClick={onCheckout}
 						disabled={isProcessing}
 					>

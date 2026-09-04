@@ -36,7 +36,7 @@ const config = {
 				categories: "67c9ffdd0039c4e09c9a",
 				items: "67c9ffe6001c17071bb7",
 				events: "68e400210008d19bb5c9",
-				inventory: "68e400210008d19bb5c9",
+				inventory: "68e3ff08002deb5d5bf4",
 				transactions: "68e4cd3500179ce661c6",
 				giftcards: "giftcards",
 			},
@@ -49,6 +49,46 @@ const config = {
 		},
 	},
 };
+
+const PAGE_SIZE = 100;
+
+/**
+ * Fetch every document in a collection matching the given queries,
+ * paging through with a cursor instead of relying on a single limited
+ * request (Appwrite defaults to a 25-document page when no limit is set,
+ * and any single limit()  silently truncates once the collection grows
+ * past it).
+ *
+ * @param {Databases} databases - Appwrite Databases instance
+ * @param {string} databaseId
+ * @param {string} collectionId
+ * @param {Array} extraQueries - Additional Query filters (no limit/cursor)
+ * @returns {Promise<Array<Object>>} All matching documents
+ */
+async function fetchAllDocuments(databases, databaseId, collectionId, extraQueries = []) {
+	let allDocuments = [];
+	let lastId = null;
+
+	// eslint-disable-next-line no-constant-condition
+	while (true) {
+		const queries = [...extraQueries, Query.orderAsc("$id"), Query.limit(PAGE_SIZE)];
+		if (lastId) queries.push(Query.cursorAfter(lastId));
+
+		const page = await databases.listDocuments({
+			databaseId,
+			collectionId,
+			queries,
+		});
+
+		const docs = page.documents || [];
+		allDocuments = allDocuments.concat(docs);
+
+		if (docs.length < PAGE_SIZE) break;
+		lastId = docs[docs.length - 1].$id;
+	}
+
+	return allDocuments;
+}
 
 /**
  * Create and configure Appwrite client
@@ -88,11 +128,12 @@ export function useAppwrite() {
 	 */
 	const refreshCategories = useCallback(async () => {
 		try {
-			const data = await databases.listDocuments(
+			const documents = await fetchAllDocuments(
+				databases,
 				config.databases.bar.id,
 				config.databases.bar.collections.categories,
 			);
-			setCategories(data.documents || []);
+			setCategories(documents);
 		} catch (err) {
 			console.error("error getting categories", err);
 		}
@@ -160,6 +201,8 @@ export function useAppwrite() {
 		}
 	}, [functions]);
 
+	const [currentUser, setCurrentUser] = useState(null);
+
 	/**
 	 * Check active session on component mount
 	 * Redirects to login if no active session
@@ -167,9 +210,11 @@ export function useAppwrite() {
 	useEffect(() => {
 		(async () => {
 			try {
-				await account.get();
+				const acct = await account.get();
+				setCurrentUser(acct);
 				console.log("session active");
 			} catch (err) {
+				setCurrentUser(null);
 				try {
 					// Redirect to login if not on authentication pages
 					if (
@@ -270,13 +315,17 @@ export function useAppwrite() {
 		startDate = new Date(startDate).toISOString();
 		endDate = new Date(endDate).toISOString();
 
-		const result = await databases.listDocuments(config.databases.bar.id, config.databases.bar.collections.transactions, [
-			Query.equal("status", "complete"),
-			Query.notEqual("testing", true),
-			Query.greaterThanEqual("$createdAt", startDate),
-			Query.lessThanEqual("$createdAt", endDate),
-			Query.limit(10000),
-		]);
+		const transactions = await fetchAllDocuments(
+			databases,
+			config.databases.bar.id,
+			config.databases.bar.collections.transactions,
+			[
+				Query.equal("status", "complete"),
+				Query.notEqual("testing", true),
+				Query.greaterThanEqual("$createdAt", startDate),
+				Query.lessThanEqual("$createdAt", endDate),
+			],
+		);
 		let ItemsSold = [],
 			totalSales = 0,
 			tips = 0,
@@ -292,7 +341,7 @@ export function useAppwrite() {
 			otherAmountSold = 0;
 
 		// Return empty report if no transactions found
-		if (result.documents.length === 0) {
+		if (transactions.length === 0) {
 			return {
 				ItemsSold,
 				totalSales,
@@ -311,8 +360,15 @@ export function useAppwrite() {
 		}
 		
 		// Aggregate transaction data
-		result.documents.forEach((item) => {
-			let cart = JSON.parse(item.cart);
+		transactions.forEach((item) => {
+			let cart;
+			try {
+				cart = JSON.parse(item.cart) || [];
+			} catch (err) {
+				console.error("error parsing cart for transaction", item.$id, err);
+				cart = [];
+			}
+
 			cart.forEach((cartItem) => {
 				// Add or update item in sales list
 				if (!ItemsSold.find((i) => i.name === cartItem.name)) {
@@ -324,46 +380,53 @@ export function useAppwrite() {
 					});
 				}
 				let existingItem = ItemsSold.find((i) => i.name === cartItem.name);
-				existingItem.quantity += cartItem.quantity;
-				let itemCost = cartItem.price;
+				const quantity = cartItem.quantity || 0;
+				const itemCost = cartItem.price || 0;
 
-				existingItem.revenue += itemCost * cartItem.quantity;
+				existingItem.quantity += quantity;
+				existingItem.revenue += itemCost * quantity;
 
-				// Categorize sales by type
-				if (cartItem.categories === "67ca019f002d6527c90b" || cartItem.categories === "67ca01900011bbccfe20") {
-					alcoholAmount += itemCost * cartItem.quantity;
-					console.log("alcohol ", cartItem.name);
+				// Categorize sales by type. Prefer the item's own `alcohol` flag
+				// (added 2026-02-09) over the hardcoded category IDs below; the ID
+				// fallback stays so transactions from before that flag existed are
+				// still classified correctly.
+				const isAlcohol =
+					cartItem.alcohol === true ||
+					cartItem.categories === "67ca019f002d6527c90b" ||
+					cartItem.categories === "67ca01900011bbccfe20";
+
+				if (isAlcohol) {
+					alcoholAmount += itemCost * quantity;
 				} else if (cartItem.categories === "67ca01ac000c3b35244c") {
-					foodAmount += itemCost * cartItem.quantity;
+					foodAmount += itemCost * quantity;
 				} else if (cartItem.categories === "67ca01a60004cb37ca0c") {
-					nonAlcoholicDrinksAmount += itemCost * cartItem.quantity;
+					nonAlcoholicDrinksAmount += itemCost * quantity;
 				} else {
-					console.log("other ", cartItem.name);
-					otherAmountSold += itemCost * cartItem.quantity;
+					otherAmountSold += itemCost * quantity;
 				}
 
 				// Calculate cost of goods sold (COGS)
-				if (cartItem.container_cost) {
+				if (cartItem.container_cost && cartItem.drinks_per_cont) {
 					let itemCoGS = cartItem.container_cost / cartItem.drinks_per_cont;
 					itemCoGS = itemCoGS + (cartItem.additional_drink_costs || 0);
-					const itemCogs = itemCoGS * cartItem.quantity;
+					const itemCogs = itemCoGS * quantity;
 					existingItem.cogs += itemCogs;
 					cogs += itemCogs;
 				}
 			});
-			
+
 			// Aggregate transaction totals
-			totalSales += item.total + item.discount;
-			amountPaid += item.payment_due;
-			tips += item.tip;
-			discountAmount += item.discount;
-			giftcardAmount += item.giftcard_amount;
-			
+			totalSales += (item.total || 0) + (item.discount || 0);
+			amountPaid += item.payment_due || 0;
+			tips += item.tip || 0;
+			discountAmount += item.discount || 0;
+			giftcardAmount += item.giftcard_amount || 0;
+
 			// Break down by payment method
 			if (item.payment_method === "cash") {
-				cashAmount += item.payment_due;
+				cashAmount += item.payment_due || 0;
 			} else {
-				cardAmount += item.payment_due;
+				cardAmount += item.payment_due || 0;
 			}
 		});
 
@@ -389,6 +452,7 @@ export function useAppwrite() {
 		client,
 		databases,
 		account,
+		currentUser,
 		config,
 		categories,
 		items,

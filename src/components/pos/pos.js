@@ -3,7 +3,8 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import Cart from "./cart";
 import { ProcessingModal, ErrorModal, CashPaymentModal, SuccessModal } from "../common/Modals/TransactionModals";
 import AlertNotification from "../common/Alert/Alert";
-import { Box } from "@mui/material";
+import { Box, Chip, InputAdornment, Stack, TextField } from "@mui/material";
+import SearchIcon from "@mui/icons-material/Search";
 import { useAppwrite } from "../../utils/api";
 import SalesReport from "./salesReport";
 import Category from "./category";
@@ -17,7 +18,7 @@ import {
 	removeItemFromCart as removeItemFromCartUtil,
 	clearCartState as clearCartStateUtil,
 } from "../../utils/cartUtils";
-import { Query } from "appwrite";
+import { findGiftcardByUPC, decrementGiftcardBalance } from "../../utils/giftcard";
 
 
 const POS = () => {
@@ -31,6 +32,7 @@ const POS = () => {
 		refreshData,
 		settings,
 		uniqueId,
+		currentUser,
 	} = useAppwrite();
 
 	const {
@@ -65,6 +67,7 @@ const POS = () => {
 	const transactionId = useRef(null);
 	const [cashModalOpen, setCashModalOpen] = useState(false);
 	const [openSalesReport, setOpenSalesReport] = useState(false);
+	const [searchQuery, setSearchQuery] = useState("");
 
 	const localHandleCancelStripePayment = useCallback(() => {
 		handleCancelStripePayment();
@@ -155,12 +158,12 @@ const POS = () => {
 						},
 					});
 
-					const newBalance = giftBalance - applied;
-					await databases.updateDocument({
-						databaseId: config.databases.bar.id,
-						collectionId: config.databases.bar.collections.giftcards,
-						documentId: gift.$id,
-						data: { balance: newBalance },
+					const newBalance = await decrementGiftcardBalance({
+						databases,
+						config,
+						giftcardId: gift.$id,
+						currentBalance: giftBalance,
+						amount: applied,
 					});
 
 					setGiftcard && setGiftcard({ ...gift, balance: newBalance });
@@ -244,20 +247,7 @@ const POS = () => {
 			}
 
 			try {
-				const res = await databases.listDocuments(config.databases.bar.id,
-					collectionId,
-					[
-						Query.limit(10000)]
-				);
-
-				const docs = res.documents || [];
-				const found = docs.find((d) => {
-					const upc = d.UPC;
-					if (!upc) return false;
-					if (Array.isArray(upc)) return upc.includes(code);
-					if (typeof upc === "string") return upc === code || upc.includes(code);
-					return false;
-				});
+				const found = await findGiftcardByUPC({ databases, config, code });
 
 				if (!found) {
 					setStripeAlert({
@@ -404,6 +394,7 @@ const POS = () => {
 				databases,
 				config,
 				uniqueId,
+				getCreatedBy: () => currentUser?.name || currentUser?.email || null,
 				getCart: () => cart,
 				getTotal: () => total,
 				getDiscount: () => discount,
@@ -424,6 +415,7 @@ const POS = () => {
 			databases,
 			config,
 			uniqueId,
+			currentUser,
 			cart,
 			total,
 			discount,
@@ -517,28 +509,99 @@ const POS = () => {
 		refreshData();
 	}, [categories.length, items.length, refreshCategories, refreshItems, refreshData]);
 
+	const filteredItems = useMemo(() => {
+		const query = searchQuery.trim().toLowerCase();
+		if (!query) return items;
+		return items.filter((item) => item.name?.toLowerCase().includes(query));
+	}, [items, searchQuery]);
+
+	const cartQuantities = useMemo(() => {
+		const map = {};
+		cart.forEach((cartItem) => {
+			map[cartItem.$id] = cartItem.quantity;
+		});
+		return map;
+	}, [cart]);
+
+	const categoriesWithItems = useMemo(
+		() =>
+			categories.filter((category) =>
+				filteredItems.some(
+					(item) =>
+						item.categories === category.$id &&
+						item.enabledPOS !== false
+				)
+			),
+		[categories, filteredItems]
+	);
+
+	const scrollToCategory = (categoryId) => {
+		const el = document.getElementById(`category-${categoryId}`);
+		if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+	};
+
 	return (
-		<Box sx={{ display: "flex", height: "100vh" }}>
+		<Box sx={{ display: "flex", width: "100%", height: "100vh" }}>
 			<Box
 				sx={{
 					flex: 1,
-					overflow: "wrap",
+					minWidth: 0,
 					display: "flex",
-					flexWrap: "wrap",
+					flexDirection: "column",
 					p: 2,
 					maxHeight: "100%",
 					overflowY: "auto",
-					alignContent: "flex-start",
-					alignItems: "flex-start",
 				}}
 			>
+				<Box
+					sx={{
+						position: "sticky",
+						top: 0,
+						zIndex: 2,
+						backgroundColor: "background.default",
+						pb: 1,
+					}}
+				>
+					<TextField
+						value={searchQuery}
+						onChange={(e) => setSearchQuery(e.target.value)}
+						placeholder="Search items..."
+						size="small"
+						fullWidth
+						sx={{ mb: categoriesWithItems.length > 1 ? 1.5 : 0 }}
+						InputProps={{
+							startAdornment: (
+								<InputAdornment position="start">
+									<SearchIcon fontSize="small" />
+								</InputAdornment>
+							),
+						}}
+					/>
+					{categoriesWithItems.length > 1 && (
+						<Stack
+							direction="row"
+							spacing={1}
+							sx={{ overflowX: "auto" }}
+						>
+							{categoriesWithItems.map((category) => (
+								<Chip
+									key={category.$id}
+									label={category.name}
+									onClick={() => scrollToCategory(category.$id)}
+									sx={{ flexShrink: 0 }}
+								/>
+							))}
+						</Stack>
+					)}
+				</Box>
 				{categories.map((category) => (
 					<Category
 						key={category.$id}
 						category={category}
-						items={items}
+						items={filteredItems}
 						onAdd={addItemToCart}
 						disableItem={disableItem}
+						cartQuantities={cartQuantities}
 					/>
 				))}
 			</Box>

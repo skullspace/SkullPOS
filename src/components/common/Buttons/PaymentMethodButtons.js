@@ -33,25 +33,35 @@ const PaymentMethodButtons = ({
 }) => {
 	const isCardDisabled = !isTerminalReady || isProcessing;
 
+	const buttonSx = {
+		minHeight: 56,
+		px: 0.5,
+		fontSize: "0.85rem",
+		lineHeight: 1.15,
+		whiteSpace: "normal",
+		textAlign: "center",
+	};
+
 	return (
 		<Box
 			sx={{
 				display: "grid",
-				gridTemplateColumns: "1fr 1fr 2fr",
+				gridTemplateColumns: "1fr 1fr 1.3fr",
 				mb: 0.5,
 				gap: 0.5,
 			}}
 		>
 			{/* Card Payment Button */}
 			<Tooltip title={isCardDisabled ? "Terminal not ready" : "Pay with card"}>
-				<span>
+				<span style={{ display: "block" }}>
 					<Button
-						loadingIndicator="Loading..."
+						loadingIndicator="..."
 						loading={!isTerminalReady}
 						startIcon={<CreditCardIcon fontSize="small" />}
 						disabled={isCardDisabled}
 						variant={currentMethod === "stripe" ? "outlined" : "contained"}
-						sx={{ mx: 0.5 }}
+						fullWidth
+						sx={buttonSx}
 						onClick={() => onMethodChange("stripe")}
 					>
 						Card
@@ -63,7 +73,8 @@ const PaymentMethodButtons = ({
 			<Button
 				startIcon={<MoneyIcon fontSize="small" />}
 				variant={currentMethod === "cash" ? "outlined" : "contained"}
-				sx={{ mx: 0.5 }}
+				fullWidth
+				sx={buttonSx}
 				onClick={() => onMethodChange("cash")}
 				disabled={isProcessing}
 			>
@@ -74,7 +85,8 @@ const PaymentMethodButtons = ({
 			<Button
 				startIcon={<MoneyIcon fontSize="small" />}
 				variant={isMemberDiscountApplied ? "outlined" : "contained"}
-				sx={{ mx: 0.5 }}
+				fullWidth
+				sx={buttonSx}
 				onClick={() => onToggleMemberDiscount(!isMemberDiscountApplied)}
 				disabled={isProcessing}
 			>

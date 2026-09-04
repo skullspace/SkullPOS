@@ -2,7 +2,7 @@ import React from "react";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import RemoveIcon from "@mui/icons-material/Remove";
-import { Tooltip, Box, IconButton } from "@mui/material";
+import { Tooltip, Box, IconButton, Typography } from "@mui/material";
 import { formatCAD } from "../../utils/format";
 
 // Renders a single cart line
@@ -28,11 +28,14 @@ const CartItem = ({ cartItem, onRemove, onIncrement, onDecrement }) => {
         <Box
             key={cartItem.$id}
             sx={{
+                position: "relative",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
+                gap: 1,
                 borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
                 py: 0.5 * 1.4,
+                pr: 4,
                 transition: "background-color 120ms ease",
                 "&:hover": {
                     backgroundColor: (theme) =>
@@ -49,10 +52,34 @@ const CartItem = ({ cartItem, onRemove, onIncrement, onDecrement }) => {
                 },
             }}
         >
-            <Box sx={{ display: "flex", flexDirection: "column" }}>
+            <Tooltip title={`Remove ${cartItem.name}`}>
+                <IconButton
+                    size="small"
+                    color="default"
+                    onClick={() => onRemove(cartItem.$id, true)}
+                    aria-label={`Remove ${cartItem.name}`}
+                    sx={{
+                        position: "absolute",
+                        top: 0,
+                        right: 0,
+                        opacity: 0.6,
+                        "&:hover": { opacity: 1 },
+                    }}
+                >
+                    <DeleteIcon fontSize="small" />
+                </IconButton>
+            </Tooltip>
+
+            <Box sx={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
                 <Box
                     component="div"
-                    sx={{ fontSize: `${0.95 * 1.4}rem`, fontWeight: 600 }}
+                    sx={{
+                        fontSize: `${0.95 * 1.4}rem`,
+                        fontWeight: 600,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                    }}
                 >
                     {cartItem.name}
                 </Box>
@@ -63,26 +90,25 @@ const CartItem = ({ cartItem, onRemove, onIncrement, onDecrement }) => {
                         color: "text.secondary",
                     }}
                 >
-                    {formatCAD(cartItem.price)}
-                </Box>
-                <Box
-                    component="div"
-                    sx={{
-                        fontSize: `${0.8 * 1.4}rem`,
-                        color: "text.secondary",
-                    }}
-                >
-                    Qty: {cartItem.quantity}
+                    {formatCAD(cartItem.price)} each
                 </Box>
             </Box>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+
+            <Box
+                sx={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-end",
+                    gap: 0.5,
+                    flexShrink: 0,
+                }}
+            >
                 {/* total cost = price * qty */}
                 <Box
                     component="div"
                     sx={{
                         fontWeight: 700,
                         fontSize: `${1 * 1.4}rem`,
-                        mr: 0.5,
                         color: "text.primary",
                     }}
                 >
@@ -94,47 +120,43 @@ const CartItem = ({ cartItem, onRemove, onIncrement, onDecrement }) => {
                 <Box
                     sx={{
                         display: "flex",
-                        flexDirection: "column",
                         alignItems: "center",
-                        gap: 0.5,
+                        border: (theme) => `1px solid ${theme.palette.divider}`,
+                        borderRadius: "999px",
+                        gap: 0.25,
                     }}
                 >
-                    <Tooltip title={`Add one ${cartItem.name}`}>
-                        <IconButton
-                            size="sm"
-                            color="neutral"
-                            onClick={handleIncrement}
-                            aria-label={`Add one ${cartItem.name}`}
-                            sx={{ transform: "scale(1.2)" }}
-                        >
-                            <AddIcon sx={{ fontSize: `${16 * 1.2}px` }} />
-                        </IconButton>
-                    </Tooltip>
-
-                    <Tooltip title={`Remove ${cartItem.name}`}>
-                        <IconButton
-                            size="sm"
-                            color="neutral"
-                            onClick={() => onRemove(cartItem.$id, true)}
-                            aria-label={`Remove ${cartItem.name}`}
-                            sx={{ transform: "scale(1.4)" }}
-                        >
-                            <DeleteIcon
-                                fontSize="small"
-                                sx={{ fontSize: `${16 * 1.4}px` }}
-                            />
-                        </IconButton>
-                    </Tooltip>
-
                     <Tooltip title={`Decrease quantity of ${cartItem.name}`}>
                         <IconButton
-                            size="sm"
-                            color="neutral"
+                            size="small"
+                            color="default"
                             onClick={handleDecrement}
                             aria-label={`Decrease ${cartItem.name}`}
-                            sx={{ transform: "scale(1.2)" }}
                         >
-                            <RemoveIcon sx={{ fontSize: `${16 * 1.2}px` }} />
+                            <RemoveIcon fontSize="small" />
+                        </IconButton>
+                    </Tooltip>
+
+                    <Typography
+                        component="span"
+                        sx={{
+                            minWidth: 20,
+                            textAlign: "center",
+                            fontWeight: 600,
+                            fontSize: "0.9rem",
+                        }}
+                    >
+                        {cartItem.quantity}
+                    </Typography>
+
+                    <Tooltip title={`Add one ${cartItem.name}`}>
+                        <IconButton
+                            size="small"
+                            color="default"
+                            onClick={handleIncrement}
+                            aria-label={`Add one ${cartItem.name}`}
+                        >
+                            <AddIcon fontSize="small" />
                         </IconButton>
                     </Tooltip>
                 </Box>

@@ -1,3 +1,5 @@
+import { decrementGiftcardBalance } from "./giftcard";
+
 // if on localhost, use test mode
 const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
@@ -11,6 +13,7 @@ export default function createCheckout(deps) {
 		getCart,
 		getTotal,
 		getDiscount,
+		getCreatedBy,
 		getPaymentMethod,
 		getGiftcard,
 		setGiftcard,
@@ -47,6 +50,7 @@ export default function createCheckout(deps) {
 			testing: test,
 			itemsRel: itemsRelList,
 			total: getTotal ? getTotal() : 0,
+			CreatedBy: getCreatedBy ? getCreatedBy() : null,
 		};
 
 		try {
@@ -110,12 +114,12 @@ export default function createCheckout(deps) {
 						setGiftcard && setGiftcard(null);
 						setGiftcardUsage && setGiftcardUsage(null);
 
-						const newBalance = giftBalance - applied;
-						await databases.updateDocument({
-							databaseId: config.databases.bar.id,
-							collectionId: config.databases.bar.collections.giftcards,
-							documentId: gift.$id,
-							data: { balance: newBalance },
+						await decrementGiftcardBalance({
+							databases,
+							config,
+							giftcardId: gift.$id,
+							currentBalance: giftBalance,
+							amount: applied,
 						});
 
 						setTransactionInProgress && setTransactionInProgress(false);
@@ -154,12 +158,12 @@ export default function createCheckout(deps) {
 
 						// attempt to decrement giftcard balance in DB; if this fails, surface error but keep giftcard removed
 						try {
-							const newBalance = giftBalance - applied;
-							await databases.updateDocument({
-								databaseId: config.databases.bar.id,
-								collectionId: config.databases.bar.collections.giftcards,
-								documentId: gift.$id,
-								data: { balance: newBalance },
+							await decrementGiftcardBalance({
+								databases,
+								config,
+								giftcardId: gift.$id,
+								currentBalance: giftBalance,
+								amount: applied,
 							});
 						} catch (decErr) {
 							console.error("Failed to decrement giftcard after successful charge:", decErr);
