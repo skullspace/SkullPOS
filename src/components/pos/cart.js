@@ -10,14 +10,13 @@ import {
 	TextField,
 	Menu,
 } from "@mui/material";
-import { FormControl, MenuItem, Tooltip } from "@mui/material";
-import CreditCardIcon from "@mui/icons-material/CreditCard";
+import { FormControl, MenuItem } from "@mui/material";
 import HamburgerMenuIcon from "@mui/icons-material/Menu";
-import MoneyIcon from "@mui/icons-material/AttachMoney";
-import CheckoutIcon from "@mui/icons-material/ShoppingCartCheckout";
-import DeleteIcon from "@mui/icons-material/Delete";
 import { formatCAD } from "../../utils/format";
 import CartItem from "./cartItem";
+import PaymentMethodButtons from "../common/Buttons/PaymentMethodButtons";
+import CheckoutButton from "../common/Buttons/CheckoutButton";
+import GiftcardDisplay from "../common/Display/GiftcardDisplay";
 
 const Cart = ({
 	cart,
@@ -220,164 +219,32 @@ const Cart = ({
 				}}
 			>
 				<Box sx={{ mt: 2 }}>
-					{giftcard && (
-						<Box
-							sx={{
-								mb: 1,
-								display: "flex",
-								justifyContent: "space-between",
-								alignItems: "center",
-							}}
-						>
-							<div>
-								<strong>Giftcard:</strong>{" "}
-								{(() => {
-									const id = giftcard.dj || "";
-									if (id.length <= 8) return id;
-									return "****" + id.slice(-8);
-								})()}
-								<div>
-									Balance: {formatCAD(giftcard.balance || 0)}
-								</div>
-							</div>
-							<Button
-								size="small"
-								onClick={onClearGiftcard}
-								disabled={!!transactionInProgress}
-							>
-								Clear Giftcard
-							</Button>
-						</Box>
-					)}
+					<GiftcardDisplay
+						giftcard={giftcard}
+						onClear={onClearGiftcard}
+						isProcessing={!!transactionInProgress}
+					/>
 					{(() => {
 						return <h3>Subtotal: {formatCAD(total)}</h3>;
 					})()}
 				</Box>
-				<Box
-					sx={{
-						display: "grid",
-						gridTemplateColumns: "1fr 1fr 2fr",
-						mb: 0.5,
-						gap: 0.5,
-					}}
-				>
-					<Button
-						loadingIndicator="Loading..."
-						loading={!terminalReady}
-						startDecorator={<CreditCardIcon fontSize="small" />}
-						disabled={terminalReady ? false : true}
-						variant={
-							paymentMethod === "stripe"
-								? "outlined"
-								: "contained"
-						}
-						sx={{ mx: 0.5 }}
-						onClick={() => setPaymentMethod("stripe")}
-					>
-						Card
-					</Button>
-					<Button
-						startDecorator={<MoneyIcon fontSize="small" />}
-						variant={
-							paymentMethod === "cash" ? "outlined" : "contained"
-						}
-						sx={{ mx: 0.5 }}
-						onClick={() => setPaymentMethod("cash")}
-					>
-						Cash
-					</Button>
-					<Button
-						startDecorator={<MoneyIcon fontSize="small" />}
-						variant={
-							member_discount_applied ? "outlined" : "contained"
-						}
-						sx={{ mx: 0.5 }}
-						onClick={() =>
-							applyMemberDiscount(!member_discount_applied)
-						}
-					>
-						Member Discount
-					</Button>
-				</Box>
+				<PaymentMethodButtons
+					currentMethod={paymentMethod}
+					onMethodChange={setPaymentMethod}
+					isTerminalReady={terminalReady}
+					isMemberDiscountApplied={member_discount_applied}
+					onToggleMemberDiscount={applyMemberDiscount}
+					isProcessing={!!transactionInProgress}
+				/>
 
-				<Box
-					sx={{
-						display: "grid",
-						gridTemplateColumns: "3fr 1fr",
-						gap: 0.5,
-						alignItems: "end",
-					}}
-				>
-					<Box
-						sx={{
-							height: "100%",
-							display: "flex",
-							flexDirection: "column",
-							justifyContent: "end",
-						}}
-					>
-						{cart.length === 0 ? (
-							<Tooltip title="Cart is empty">
-								<span>
-									<Button
-										color="primary"
-										variant="contained"
-										fullWidth
-										sx={{ mt: 0 }}
-										onClick={checkout}
-										disabled
-									>
-										<CheckoutIcon
-											fontSize="small"
-											sx={{ mr: 1 }}
-										/>
-										Checkout
-									</Button>
-								</span>
-							</Tooltip>
-						) : paymentMethod === "stripe" && !terminalReady ? (
-							<Tooltip title="Terminal not ready">
-								<span>
-									<Button
-										color="primary"
-										variant="contained"
-										fullWidth
-										sx={{ mt: 0 }}
-										onClick={checkout}
-										disabled
-									>
-										<CheckoutIcon
-											fontSize="small"
-											sx={{ mr: 1 }}
-										/>
-										Checkout
-									</Button>
-								</span>
-							</Tooltip>
-						) : (
-							<Button
-								color="primary"
-								variant="contained"
-								fullWidth
-								sx={{ mt: 0 }}
-								onClick={checkout}
-							>
-								<CheckoutIcon fontSize="small" sx={{ mr: 1 }} />
-								Checkout
-							</Button>
-						)}
-					</Box>
-
-					<IconButton
-						variant="contained"
-						color="secondary"
-						onClick={clearCart}
-						aria-label="Clear cart"
-						sx={{ mt: 0 }}
-					>
-						<DeleteIcon fontSize="small" />
-					</IconButton>
-				</Box>
+				<CheckoutButton
+					cartItemCount={cart.length}
+					isTerminalReady={terminalReady}
+					paymentMethod={paymentMethod}
+					onCheckout={checkout}
+					onClearCart={clearCart}
+					isProcessing={!!transactionInProgress}
+				/>
 			</Box>
 		</Box>
 	);

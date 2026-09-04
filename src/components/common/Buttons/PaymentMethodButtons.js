@@ -48,7 +48,7 @@ const PaymentMethodButtons = ({
 					<Button
 						loadingIndicator="Loading..."
 						loading={!isTerminalReady}
-						startDecorator={<CreditCardIcon fontSize="small" />}
+						startIcon={<CreditCardIcon fontSize="small" />}
 						disabled={isCardDisabled}
 						variant={currentMethod === "stripe" ? "outlined" : "contained"}
 						sx={{ mx: 0.5 }}
@@ -61,7 +61,7 @@ const PaymentMethodButtons = ({
 
 			{/* Cash Payment Button */}
 			<Button
-				startDecorator={<MoneyIcon fontSize="small" />}
+				startIcon={<MoneyIcon fontSize="small" />}
 				variant={currentMethod === "cash" ? "outlined" : "contained"}
 				sx={{ mx: 0.5 }}
 				onClick={() => onMethodChange("cash")}
@@ -72,7 +72,7 @@ const PaymentMethodButtons = ({
 
 			{/* Member Discount Button */}
 			<Button
-				startDecorator={<MoneyIcon fontSize="small" />}
+				startIcon={<MoneyIcon fontSize="small" />}
 				variant={isMemberDiscountApplied ? "outlined" : "contained"}
 				sx={{ mx: 0.5 }}
 				onClick={() => onToggleMemberDiscount(!isMemberDiscountApplied)}

@@ -1,11 +1,10 @@
-/* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Cart from "./cart";
-import Modals from "./modals";
-import { FormControl, InputLabel, Select, MenuItem, Alert, Collapse, Box, Button, Modal } from "@mui/material";
+import { ProcessingModal, ErrorModal, CashPaymentModal, SuccessModal } from "../common/Modals/TransactionModals";
+import AlertNotification from "../common/Alert/Alert";
+import { Box } from "@mui/material";
 import { useAppwrite } from "../../utils/api";
-import Item from "./item";
 import SalesReport from "./salesReport";
 import Category from "./category";
 import { formatCAD } from "../../utils/format";
@@ -18,15 +17,12 @@ import {
 	removeItemFromCart as removeItemFromCartUtil,
 	clearCartState as clearCartStateUtil,
 } from "../../utils/cartUtils";
-import { type } from "@testing-library/user-event/dist/type";
 import { Query } from "appwrite";
 
 
 const POS = () => {
 	const {
-		client,
 		databases,
-		account,
 		config,
 		categories,
 		items,
@@ -38,7 +34,6 @@ const POS = () => {
 	} = useAppwrite();
 
 	const {
-		stripeToken,
 		terminals,
 		selectedTerminal,
 		setSelectedTerminal,
@@ -59,8 +54,6 @@ const POS = () => {
 	// formatCAD is imported from shared utils
 
 	const [cart, setCart] = useState([]);
-	const [error, setError] = useState("");
-	const [loading, setLoading] = useState(false);
 	const [checkoutSuccess, setCheckoutSuccess] = useState(false);
 	const [checkoutError, setCheckoutError] = useState("");
 	const [paymentMethod, setPaymentMethod] = useState("stripe");
@@ -69,7 +62,6 @@ const POS = () => {
 	const [discount, setDiscount] = useState(0);
 	const [total, setTotal] = useState(0);
 	const [member_discount_applied, setMemberDiscountApplied] = useState(false);
-	const [checkoutLoading, setCheckoutLoading] = useState(false);
 	const transactionId = useRef(null);
 	const [cashModalOpen, setCashModalOpen] = useState(false);
 	const [openSalesReport, setOpenSalesReport] = useState(false);
@@ -224,7 +216,7 @@ const POS = () => {
 	const barcodeTimer = useRef(null);
 
 	const [giftcard, setGiftcard] = useState(null);
-	const [giftcardUsage, setGiftcardUsage] = useState(null);
+	const [, setGiftcardUsage] = useState(null);
 
 	const handleGiftcard = useCallback(
 		async (code) => {
@@ -603,42 +595,51 @@ const POS = () => {
 				}}
 				setOpenSalesReport={setOpenSalesReport}
 			/>
-			<Modals
-				cashModalOpen={cashModalOpen}
-				setCashModalOpen={setCashModalOpen}
-				checkoutSuccess={checkoutSuccess}
-				setCheckoutSuccess={setCheckoutSuccess}
-				checkoutError={checkoutError}
-				setCheckoutError={setCheckoutError}
-				onRetryCheckout={retryCheckout}
-				transactionInProgress={transactionInProgress}
-				amountReceived={amountReceived}
-				setAmountReceived={setAmountReceived}
-				handleCashPayment={handleCashPayment}
-				changeDue={changeDue}
-				formatCAD={formatCAD}
-				handleCancelStripePayment={localHandleCancelStripePayment}
-				stopTransactionInProgress={stopTransactionInProgress}
+			<ProcessingModal
+				isProcessing={transactionInProgress}
 				paymentMethod={paymentMethod}
-				clearCart={clearCart}
-				setChangeDue={setChangeDue}
+				onCancel={stopTransactionInProgress}
 			/>
-			<Collapse id="primaryAlert" in={stripeAlert.active}>
-				<Alert
-					variant="filled"
-					open={stripeAlert.active}
-					onClose={() =>
-						setStripeAlert({
-							active: false,
-							message: "",
-							type: "info",
-						})
-					}
-					severity={stripeAlert.type}
-				>
-					{stripeAlert.message}
-				</Alert>
-			</Collapse>
+			<ErrorModal
+				isOpen={!!checkoutError && !transactionInProgress}
+				errorMessage={checkoutError}
+				isRetrying={transactionInProgress}
+				onRetry={retryCheckout}
+				onClose={() => {
+					localHandleCancelStripePayment();
+					setCheckoutError(false);
+				}}
+			/>
+			<CashPaymentModal
+				isOpen={cashModalOpen && !transactionInProgress && !checkoutError}
+				amountPaid={amountReceived}
+				onAmountChange={setAmountReceived}
+				onSubmit={handleCashPayment}
+				onClose={() => setCashModalOpen(false)}
+				isProcessing={transactionInProgress}
+			/>
+			<SuccessModal
+				isOpen={checkoutSuccess && !transactionInProgress && !checkoutError && !cashModalOpen}
+				changeAmount={changeDue}
+				formatCAD={formatCAD}
+				onClose={() => setCheckoutSuccess(false)}
+				onClearCart={() => {
+					setChangeDue(0);
+					clearCart();
+				}}
+			/>
+			<AlertNotification
+				isOpen={stripeAlert.active}
+				message={stripeAlert.message}
+				severity={stripeAlert.type}
+				onClose={() =>
+					setStripeAlert({
+						active: false,
+						message: "",
+						type: "info",
+					})
+				}
+			/>
 			<SalesReport open={openSalesReport} onClose={() => setOpenSalesReport(false)} />
 		</Box>
 	);

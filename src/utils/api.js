@@ -270,7 +270,7 @@ export function useAppwrite() {
 		startDate = new Date(startDate).toISOString();
 		endDate = new Date(endDate).toISOString();
 
-		const result = await databases.listDocuments("67c9ffd9003d68236514", "68e4cd3500179ce661c6", [
+		const result = await databases.listDocuments(config.databases.bar.id, config.databases.bar.collections.transactions, [
 			Query.equal("status", "complete"),
 			Query.notEqual("testing", true),
 			Query.greaterThanEqual("$createdAt", startDate),
@@ -292,7 +292,7 @@ export function useAppwrite() {
 			otherAmountSold = 0;
 
 		// Return empty report if no transactions found
-		if (result.documents.length == 0) {
+		if (result.documents.length === 0) {
 			return {
 				ItemsSold,
 				totalSales,

@@ -12,7 +12,7 @@ import { formatCAD } from "../../../utils/format";
  * GiftcardDisplay component
  * 
  * @param {Object} props - Component props
- * @param {Object} props.giftcard - Giftcard object with dj (id) and balance
+ * @param {Object} props.giftcard - Giftcard object with $id and balance
  * @param {Function} props.onClear - Callback when clearing giftcard
  * @param {boolean} props.isProcessing - Whether transaction is in progress
  * 
@@ -38,7 +38,7 @@ const GiftcardDisplay = ({ giftcard, onClear, isProcessing = false }) => {
 			}}
 		>
 			<div>
-				<strong>Giftcard:</strong> {maskGiftcardId(giftcard.dj)}
+				<strong>Giftcard:</strong> {maskGiftcardId(giftcard.$id)}
 				<div>Balance: {formatCAD(giftcard.balance || 0)}</div>
 			</div>
 			<Button
