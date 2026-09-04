@@ -1,100 +1,98 @@
+/**
+ * Login.js - User authentication component
+ * 
+ * Allows users to authenticate with their Appwrite account using email and password.
+ * Features:
+ * - Email/password input validation
+ * - Error handling and display
+ * - Navigation to registration page for new users
+ * - Automatic redirect to POS after successful login
+ */
+
 import React, { useState } from "react";
 import { useAppwrite } from "../utils/api";
-import {
-	Box,
-	Button,
-	Input,
-	Typography,
-	FormControl,
-	FormLabel,
-} from "@mui/material";
 import { useNavigate } from "react-router-dom";
+import AuthForm from "./auth/AuthForm";
 
+/**
+ * Login component
+ * 
+ * @returns {JSX.Element} Login form with email and password fields
+ */
 const Login = () => {
 	const { login } = useAppwrite();
-	const [email, setEmail] = useState("");
-	const [password, setPassword] = useState("");
-	const [error, setError] = useState("");
+	const navigate = useNavigate();
 
+	// Form state
+	const [formValues, setFormValues] = useState({
+		email: "",
+		password: "",
+	});
+	const [errorMessage, setErrorMessage] = useState("");
+
+	/**
+	 * Handle field value changes
+	 * 
+	 * @param {string} fieldName - Name of field being updated
+	 * @param {string} value - New field value
+	 */
+	const handleFieldChange = (fieldName, value) => {
+		setFormValues((prev) => ({
+			...prev,
+			[fieldName]: value,
+		}));
+	};
+
+	/**
+	 * Handle login form submission
+	 * Attempts to authenticate user and redirects to POS on success
+	 * 
+	 * @param {Event} e - Form submission event
+	 */
 	const handleLogin = async (e) => {
 		e.preventDefault();
 		try {
-			await login(email, password);
-			setError("");
+			await login(formValues.email, formValues.password);
+			setErrorMessage("");
 			navigate("/pos");
 		} catch (err) {
 			console.error("Login error:", err);
-			setError(err.message || "Login failed");
+			setErrorMessage(err.message || "Login failed");
 		}
 	};
 
-	const navigate = useNavigate();
-
-	const goToRegister = () => {
+	/**
+	 * Navigate to registration page for new users
+	 */
+	const handleNavigateToRegister = () => {
 		navigate("/register");
 	};
 
+	// Form field configuration
+	const loginFields = [
+		{ name: "email", label: "Email", type: "email" },
+		{ name: "password", label: "Password", type: "password" },
+	];
+
+	// Secondary actions
+	const secondaryActions = [
+		{
+			label: "Register",
+			onClick: handleNavigateToRegister,
+		},
+	];
+
 	return (
-		<Box
-			sx={{
-				display: "flex",
-				flexDirection: "column",
-				alignItems: "center",
-				justifyContent: "center",
-				height: "100vh",
-				padding: 2,
-			}}
-		>
-			<Typography level="h4" component="h1" sx={{ mb: 2 }}>
-				Login
-			</Typography>
-			<form
-				onSubmit={handleLogin}
-				style={{ width: "100%", maxWidth: 400 }}
-			>
-				<FormControl required>
-					<FormLabel>Email</FormLabel>
-					<Input
-						type="email"
-						value={email}
-						onChange={(e) => setEmail(e.target.value)}
-						sx={{ mb: 2 }}
-					/>
-				</FormControl>
-				<FormControl required>
-					<FormLabel>Password</FormLabel>
-					<Input
-						type="password"
-						value={password}
-						onChange={(e) => setPassword(e.target.value)}
-						sx={{ mb: 2 }}
-					/>
-				</FormControl>
-				{error && (
-					<Typography level="body2" color="danger" sx={{ mb: 2 }}>
-						{error}
-					</Typography>
-				)}
-				<Button
-					type="submit"
-					variant="solid"
-					color="primary"
-					fullWidth
-					sx={{ mb: 1 }}
-				>
-					Login
-				</Button>
-				<Button
-					type="button"
-					variant="outlined"
-					color="neutral"
-					fullWidth
-					onClick={goToRegister}
-				>
-					Register
-				</Button>
-			</form>
-		</Box>
+		<AuthForm
+			title="Login"
+			fields={loginFields}
+			values={formValues}
+			onFieldChange={handleFieldChange}
+			errorMessage={errorMessage}
+			onSubmit={handleLogin}
+			submitButtonLabel="Login"
+			secondaryActions={secondaryActions}
+		/>
 	);
 };
 

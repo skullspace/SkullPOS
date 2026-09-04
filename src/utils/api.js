@@ -1,29 +1,31 @@
+/**
+ * api.js - Appwrite backend integration and authentication management
+ * 
+ * This module provides:
+ * - Appwrite client initialization and configuration
+ * - User authentication (login, register, logout)
+ * - Database operations for categories, items, and transactions
+ * - Sales report generation and analytics
+ * - Stripe connection token generation for payment processing
+ * 
+ * Backend: Appwrite Backend-as-a-Service (BaaS)
+ * Database structure:
+ *   - bar database: contains categories, items, transactions, inventory, events, giftcards
+ *   - data database: contains configuration settings
+ */
+
 import { Client as Appwrite, Databases, Account, ID, Functions, Query } from "appwrite";
 
 import { useMemo, useState, useEffect, useCallback } from "react";
 
-// if on localhost, use test mode
+// Detect environment: use test mode if running on localhost
 const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-
 const test = isLocalhost;
 
-// db id 67c9ffd9003d68236514
-// items collection id 67c9ffe6001c17071bb7
-// category collection id 67c9ffdd0039c4e09c9a
-
-/*
-Transactions
-    stripe_id
-    items
-    cost
-    status
-    tip
-    event
-    discount
-    discount_reason
-    payment_method
-*/
-
+/**
+ * Appwrite configuration
+ * Contains endpoint URL, project ID, and database/collection IDs
+ */
 const config = {
 	endpoint: "https://api.cloud.shotty.tech/v1",
 	project: "68f2ac7b00002e7563a8",
@@ -48,21 +50,42 @@ const config = {
 	},
 };
 
+/**
+ * Create and configure Appwrite client
+ * @returns {Appwrite} Configured Appwrite client instance
+ */
 function createClient() {
 	const client = new Appwrite();
 	client.setEndpoint(config.endpoint).setProject(config.project);
 	return client;
 }
 
+/**
+ * useAppwrite Hook - Main hook for Appwrite functionality
+ * 
+ * Provides:
+ * - Authentication methods (login, register, logout)
+ * - Database operations (CRUD for items, categories)
+ * - Data fetching and caching
+ * - Stripe token generation
+ * 
+ * @returns {Object} Object containing all Appwrite methods and state
+ */
 export function useAppwrite() {
+	// State management
 	const [categories, setCategories] = useState([]);
 	const [items, setItems] = useState([]);
 	const [data, setData] = useState(null);
-	//const [events, setEvents] = useState(null);
+	
+	// Initialize Appwrite clients (memoized to prevent recreation)
 	const client = useMemo(() => createClient(), []);
 	const databases = useMemo(() => new Databases(client), [client]);
 	const account = useMemo(() => new Account(client), [client]);
 
+	/**
+	 * Fetch all product categories from database
+	 * Categories group items in the POS UI
+	 */
 	const refreshCategories = useCallback(async () => {
 		try {
 			const data = await databases.listDocuments(
@@ -75,6 +98,11 @@ export function useAppwrite() {
 		}
 	}, [databases]);
 
+	/**
+	 * Fetch all items from database
+	 * Items are products available for sale
+	 * Ordered by name and limited to 1000 results
+	 */
 	const refreshItems = useCallback(async () => {
 		try {
 			const data = await databases.listDocuments({
@@ -89,6 +117,11 @@ export function useAppwrite() {
 		}
 	}, [databases]);
 
+	/**
+	 * Fetch configuration data from database
+	 * Stores settings like member discount percentage
+	 * Data is stored as key-value pairs
+	 */
 	const refreshData = useCallback(async () => {
 		try {
 			const data = await databases.listDocuments({
@@ -106,21 +139,14 @@ export function useAppwrite() {
 		}
 	}, [databases]);
 
-	// const refreshEvents = useCallback(async () => {
-	//     try {
-	//         const data = await databases.listDocuments({
-	//             databaseId: config.databases.data.id,
-	//             collectionId: config.databases.data.collections.events
-	//         });
-	//         setEvents(data.documents || []);
-	//     } catch (err) {
-	//         console.error('error getting events', err);
-	//     }
-	// }, [databases]);
-
-	// call function to generate connection token from strip (appwrite function id:68f2904a00171e8b0266)
-
 	const functions = useMemo(() => new Functions(client), [client]);
+	
+	/**
+	 * Generate Stripe connection token via Appwrite Function
+	 * Used for initializing Stripe Terminal connection
+	 * 
+	 * @returns {Promise<string>} Stripe connection token secret
+	 */
 	const generateStripeConnectionToken = useCallback(async () => {
 		try {
 			const response = await functions.createExecution({
@@ -134,6 +160,10 @@ export function useAppwrite() {
 		}
 	}, [functions]);
 
+	/**
+	 * Check active session on component mount
+	 * Redirects to login if no active session
+	 */
 	useEffect(() => {
 		(async () => {
 			try {
@@ -141,13 +171,12 @@ export function useAppwrite() {
 				console.log("session active");
 			} catch (err) {
 				try {
-					// if not on login or register page, redirect to login
+					// Redirect to login if not on authentication pages
 					if (
 						!window.location.pathname.startsWith("/login") &&
 						!window.location.pathname.startsWith("/register")
 					) {
 						console.log("no active session");
-						// redirect to login
 						window.location.href = "/login";
 					}
 				} catch (e) {
@@ -157,6 +186,15 @@ export function useAppwrite() {
 		})();
 	}, [account]);
 
+	/**
+	 * User login with email and password
+	 * Creates an authenticated session
+	 * 
+	 * @param {string} email - User email address
+	 * @param {string} password - User password
+	 * @returns {Promise<Object>} Login response object
+	 * @throws {Error} If login fails or user already logged in
+	 */
 	const login = useCallback(
 		async (email, password) => {
 			try {
@@ -174,6 +212,10 @@ export function useAppwrite() {
 		[account],
 	);
 
+	/**
+	 * User logout
+	 * Deletes current session and redirects to login
+	 */
 	async function logout() {
 		try {
 			await account.deleteSession({ sessionId: "current" });
@@ -183,6 +225,17 @@ export function useAppwrite() {
 		}
 	}
 
+	/**
+	 * Register new user account
+	 * Email must be @skullspace.ca domain
+	 * 
+	 * @param {Object} data - Registration data
+	 * @param {string} data.name - User's full name
+	 * @param {string} data.email - User email (@skullspace.ca required)
+	 * @param {string} data.password - User password
+	 * @returns {Promise<Object>} Created account object
+	 * @throws {Error} If email domain is invalid or user already exists
+	 */
 	async function register(data) {
 		const { name, email, password } = data;
 		if (!email.endsWith("@skullspace.ca")) {
@@ -192,12 +245,27 @@ export function useAppwrite() {
 			await account.get();
 			throw new Error("Already logged in");
 		} catch (err) {
-			// not logged in, continue
+			// Not logged in, continue
 		}
 		let id = ID.unique();
 		return await account.create(id, email, password, name);
 	}
 
+	/**
+	 * Generate sales report for a date range
+	 * Analyzes completed transactions and generates analytics
+	 * 
+	 * Includes:
+	 * - Items sold with quantities and revenue
+	 * - Sales breakdown by category (alcohol, food, drinks)
+	 * - Payment method breakdown (cash, card, giftcard)
+	 * - Discounts and tips
+	 * - Cost of goods sold (COGS) and profit calculation
+	 * 
+	 * @param {Date} startDate - Report start date
+	 * @param {Date} endDate - Report end date
+	 * @returns {Promise<Object>} Sales report object with aggregated metrics
+	 */
 	async function fetchSalesReport(startDate, endDate) {
 		startDate = new Date(startDate).toISOString();
 		endDate = new Date(endDate).toISOString();
@@ -223,7 +291,7 @@ export function useAppwrite() {
 			nonAlcoholicDrinksAmount = 0,
 			otherAmountSold = 0;
 
-		// eslint-disable-next-line eqeqeq
+		// Return empty report if no transactions found
 		if (result.documents.length == 0) {
 			return {
 				ItemsSold,
@@ -241,9 +309,12 @@ export function useAppwrite() {
 				otherAmountSold,
 			};
 		}
+		
+		// Aggregate transaction data
 		result.documents.forEach((item) => {
 			let cart = JSON.parse(item.cart);
 			cart.forEach((cartItem) => {
+				// Add or update item in sales list
 				if (!ItemsSold.find((i) => i.name === cartItem.name)) {
 					ItemsSold.push({
 						name: cartItem.name,
@@ -258,6 +329,7 @@ export function useAppwrite() {
 
 				existingItem.revenue += itemCost * cartItem.quantity;
 
+				// Categorize sales by type
 				if (cartItem.categories === "67ca019f002d6527c90b" || cartItem.categories === "67ca01900011bbccfe20") {
 					alcoholAmount += itemCost * cartItem.quantity;
 					console.log("alcohol ", cartItem.name);
@@ -270,8 +342,7 @@ export function useAppwrite() {
 					otherAmountSold += itemCost * cartItem.quantity;
 				}
 
-				// calculate cogs
-
+				// Calculate cost of goods sold (COGS)
 				if (cartItem.container_cost) {
 					let itemCoGS = cartItem.container_cost / cartItem.drinks_per_cont;
 					itemCoGS = itemCoGS + (cartItem.additional_drink_costs || 0);
@@ -280,11 +351,15 @@ export function useAppwrite() {
 					cogs += itemCogs;
 				}
 			});
+			
+			// Aggregate transaction totals
 			totalSales += item.total + item.discount;
 			amountPaid += item.payment_due;
 			tips += item.tip;
 			discountAmount += item.discount;
 			giftcardAmount += item.giftcard_amount;
+			
+			// Break down by payment method
 			if (item.payment_method === "cash") {
 				cashAmount += item.payment_due;
 			} else {
@@ -309,6 +384,7 @@ export function useAppwrite() {
 		};
 	}
 
+	// Return all public methods and state
 	return {
 		client,
 		databases,
