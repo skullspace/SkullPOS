@@ -34,11 +34,14 @@ const config = {
 			id: "67c9ffd9003d68236514",
 			collections: {
 				categories: "67c9ffdd0039c4e09c9a",
-				items: "67c9ffe6001c17071bb7",
+				items: "pos_items",
+				itemsLegacy: "67c9ffe6001c17071bb7", // Items_old, migrated from on 2026-09-04
 				events: "68e400210008d19bb5c9",
 				inventory: "68e3ff08002deb5d5bf4",
 				transactions: "68e4cd3500179ce661c6",
 				giftcards: "giftcards",
+				discounts: "discounts",
+				ingredients: "ingredients",
 			},
 		},
 		data: {
@@ -115,6 +118,7 @@ export function useAppwrite() {
 	// State management
 	const [categories, setCategories] = useState([]);
 	const [items, setItems] = useState([]);
+	const [discounts, setDiscounts] = useState([]);
 	const [data, setData] = useState(null);
 	
 	// Initialize Appwrite clients (memoized to prevent recreation)
@@ -140,6 +144,37 @@ export function useAppwrite() {
 	}, [databases]);
 
 	/**
+	 * Fetch all configured discounts (member discount, comps, promos, etc.)
+	 * so the POS can offer more than a single hardcoded discount.
+	 */
+	const refreshDiscounts = useCallback(async () => {
+		try {
+			const documents = await fetchAllDocuments(
+				databases,
+				config.databases.bar.id,
+				config.databases.bar.collections.discounts,
+			);
+			setDiscounts(documents);
+		} catch (err) {
+			console.error("error getting discounts", err);
+		}
+	}, [databases]);
+
+	/**
+	 * Normalize a pos_items document to the field names the rest of the app
+	 * expects (carried over from the old Items_old schema), so the migration
+	 * to pos_items didn't require touching every component that reads an item.
+	 */
+	function normalizePosItem(doc) {
+		return {
+			...doc,
+			price: doc.sale_price,
+			enabledPOS: doc.enabled_pos,
+			alcohol: doc.contains_alcohol,
+		};
+	}
+
+	/**
 	 * Fetch all items from database
 	 * Items are products available for sale
 	 * Ordered by name and limited to 1000 results
@@ -152,7 +187,7 @@ export function useAppwrite() {
 				queries: [Query.orderAsc("name"), Query.limit(1000)],
 			});
 
-			setItems(data.documents || []);
+			setItems((data.documents || []).map(normalizePosItem));
 		} catch (err) {
 			console.error("error getting items", err);
 		}
@@ -326,6 +361,27 @@ export function useAppwrite() {
 				Query.lessThanEqual("$createdAt", endDate),
 			],
 		);
+
+		// Cost-per-unit for each ingredient, used to cost pos_items via their
+		// `ingredients` array (an ingredient's $id repeated once per unit used,
+		// e.g. a double shot lists the spirit twice -- Appwrite arrays/relationships
+		// have no native per-link quantity, so repetition stands in for it).
+		let ingredientCostById = {};
+		try {
+			const ingredientDocs = await fetchAllDocuments(
+				databases,
+				config.databases.bar.id,
+				config.databases.bar.collections.ingredients,
+			);
+			ingredientDocs.forEach((ing) => {
+				const caseQty = ing.case_qty || 1;
+				const contQty = ing.cont_qty || 1;
+				ingredientCostById[ing.$id] = (ing.case_cost || 0) / (caseQty * contQty);
+			});
+		} catch (err) {
+			console.error("error getting ingredients for COGS", err);
+		}
+
 		let ItemsSold = [],
 			totalSales = 0,
 			tips = 0,
@@ -405,8 +461,19 @@ export function useAppwrite() {
 					otherAmountSold += itemCost * quantity;
 				}
 
-				// Calculate cost of goods sold (COGS)
-				if (cartItem.container_cost && cartItem.drinks_per_cont) {
+				// Calculate cost of goods sold (COGS). Prefer the pos_items
+				// ingredient list (real per-unit costs); fall back to the
+				// legacy Items_old container_cost/drinks_per_cont fields for
+				// transactions from before the ingredients migration.
+				if (Array.isArray(cartItem.ingredients) && cartItem.ingredients.length > 0) {
+					const perUnitCogs = cartItem.ingredients.reduce(
+						(sum, ingredientId) => sum + (ingredientCostById[ingredientId] || 0),
+						0,
+					);
+					const itemCogs = perUnitCogs * quantity;
+					existingItem.cogs += itemCogs;
+					cogs += itemCogs;
+				} else if (cartItem.container_cost && cartItem.drinks_per_cont) {
 					let itemCoGS = cartItem.container_cost / cartItem.drinks_per_cont;
 					itemCoGS = itemCoGS + (cartItem.additional_drink_costs || 0);
 					const itemCogs = itemCoGS * quantity;
@@ -456,8 +523,10 @@ export function useAppwrite() {
 		config,
 		categories,
 		items,
+		discounts,
 		refreshCategories,
 		refreshItems,
+		refreshDiscounts,
 		refreshData,
 		settings: data,
 		login,

@@ -2,10 +2,6 @@ import React from "react";
 import { Box, Button, Chip, Typography } from "@mui/material";
 import { formatCAD } from "../../utils/format";
 
-const imgurl = (file) => {
-	return `https://api.cloud.shotty.tech/v1/storage/buckets/67ca0bcc002993f0ef2f/files/${file}/view?project=68f2ac7b00002e7563a8`;
-};
-
 const Item = ({ item, onAdd, disableItem, quantityInCart = 0 }) => {
 	const longPressTimeout = React.useRef(null);
 	const longPressTriggered = React.useRef(false);
@@ -50,7 +46,7 @@ const Item = ({ item, onAdd, disableItem, quantityInCart = 0 }) => {
 		} catch (_) {}
 	};
 
-	const bgUrl = item && item.image ? imgurl(item.image) : "/logo192.png";
+	const bgUrl = item && item.image ? item.image : "/logo192.png";
 
 	const isDisabled = Boolean(item.disabled) || disabled;
 

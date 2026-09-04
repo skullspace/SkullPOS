@@ -38,8 +38,9 @@ export default function createCheckout(deps) {
 
 		const paymentMethod = getPaymentMethod();
 
-		let itemsRelList = (getCart ? getCart() : []).map((item) => item.$id);
-
+		// Note: no itemsRel here -- that relationship is bound to the retired
+		// Items_old collection at the schema level and would mismatch pos_items
+		// IDs. The `cart` snapshot below already carries full item data.
 		const transaction = {
 			cart: JSON.stringify(getCart ? getCart() : []),
 			payment_due: parseInt(getTotal ? getTotal() : 0),
@@ -48,7 +49,6 @@ export default function createCheckout(deps) {
 			discount: parseInt(getDiscount ? getDiscount() : 0),
 			status: "pending",
 			testing: test,
-			itemsRel: itemsRelList,
 			total: getTotal ? getTotal() : 0,
 			CreatedBy: getCreatedBy ? getCreatedBy() : null,
 		};

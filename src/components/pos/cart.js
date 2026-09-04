@@ -20,8 +20,9 @@ import GiftcardDisplay from "../common/Display/GiftcardDisplay";
 
 const Cart = ({
 	cart,
-	member_discount_applied,
-	applyMemberDiscount,
+	discounts,
+	appliedDiscount,
+	onSelectDiscount,
 	clearCart,
 	removeItemFromCart,
 	onIncrement,
@@ -176,7 +177,7 @@ const Cart = ({
 				</Dialog>
 			</FormControl>
 			<Box sx={{ flex: 1, overflow: "auto" }}>
-				{member_discount_applied && (
+				{appliedDiscount && (
 					<Box
 						sx={{
 							position: "sticky",
@@ -188,7 +189,7 @@ const Cart = ({
 							borderBottom: "1px solid",
 						}}
 					>
-						<p>Member discount applied</p>
+						<p>{appliedDiscount.name} applied</p>
 					</Box>
 				)}
 				{cart.length === 0 ? (
@@ -243,8 +244,9 @@ const Cart = ({
 					currentMethod={paymentMethod}
 					onMethodChange={setPaymentMethod}
 					isTerminalReady={terminalReady}
-					isMemberDiscountApplied={member_discount_applied}
-					onToggleMemberDiscount={applyMemberDiscount}
+					discounts={discounts}
+					appliedDiscount={appliedDiscount}
+					onSelectDiscount={onSelectDiscount}
 					isProcessing={!!transactionInProgress}
 				/>
 

@@ -1,37 +1,44 @@
 /**
  * PaymentMethodButtons.js - Reusable payment method selector buttons
- * 
- * Displays payment method options (Card, Cash, Member Discount)
- * with visual feedback and disabled states
+ *
+ * Displays payment method options (Card, Cash, Discount) with visual
+ * feedback and disabled states. The discount button opens a menu listing
+ * whatever discounts are configured in the `discounts` collection, rather
+ * than a single hardcoded "Member Discount" toggle.
  */
 
-import React from "react";
-import { Box, Button, Tooltip } from "@mui/material";
+import React, { useState } from "react";
+import { Box, Button, Menu, MenuItem, Tooltip } from "@mui/material";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import MoneyIcon from "@mui/icons-material/AttachMoney";
+import { formatCAD } from "../../../utils/format";
 
 /**
  * PaymentMethodButtons component
- * 
+ *
  * @param {Object} props - Component props
  * @param {string} props.currentMethod - Currently selected payment method
  * @param {Function} props.onMethodChange - Callback when method changes
  * @param {boolean} props.isTerminalReady - Whether Stripe terminal is ready
- * @param {boolean} props.isMemberDiscountApplied - Whether member discount is active
- * @param {Function} props.onToggleMemberDiscount - Callback for discount toggle
+ * @param {Array} props.discounts - Available discounts from the discounts collection
+ * @param {Object|null} props.appliedDiscount - Currently applied discount, if any
+ * @param {Function} props.onSelectDiscount - Callback with the chosen discount (or null to clear)
  * @param {boolean} props.isProcessing - Whether transaction is in progress
- * 
+ *
  * @returns {JSX.Element} Payment method selector buttons
  */
 const PaymentMethodButtons = ({
 	currentMethod,
 	onMethodChange,
 	isTerminalReady,
-	isMemberDiscountApplied,
-	onToggleMemberDiscount,
+	discounts = [],
+	appliedDiscount,
+	onSelectDiscount,
 	isProcessing = false,
 }) => {
 	const isCardDisabled = !isTerminalReady || isProcessing;
+	const [discountMenuAnchor, setDiscountMenuAnchor] = useState(null);
+	const discountMenuOpen = Boolean(discountMenuAnchor);
 
 	const buttonSx = {
 		minHeight: 56,
@@ -41,6 +48,9 @@ const PaymentMethodButtons = ({
 		whiteSpace: "normal",
 		textAlign: "center",
 	};
+
+	const formatDiscountAmount = (discount) =>
+		discount.type === "percent" ? `${discount.amount}%` : formatCAD(discount.amount);
 
 	return (
 		<Box
@@ -81,17 +91,45 @@ const PaymentMethodButtons = ({
 				Cash
 			</Button>
 
-			{/* Member Discount Button */}
+			{/* Discount Button */}
 			<Button
 				startIcon={<MoneyIcon fontSize="small" />}
-				variant={isMemberDiscountApplied ? "outlined" : "contained"}
+				variant={appliedDiscount ? "outlined" : "contained"}
 				fullWidth
 				sx={buttonSx}
-				onClick={() => onToggleMemberDiscount(!isMemberDiscountApplied)}
-				disabled={isProcessing}
+				onClick={(e) => setDiscountMenuAnchor(e.currentTarget)}
+				disabled={isProcessing || discounts.length === 0}
 			>
-				Member Discount
+				{appliedDiscount ? appliedDiscount.name : "Discount"}
 			</Button>
+			<Menu
+				anchorEl={discountMenuAnchor}
+				open={discountMenuOpen}
+				onClose={() => setDiscountMenuAnchor(null)}
+			>
+				{discounts.map((discount) => (
+					<MenuItem
+						key={discount.$id}
+						selected={appliedDiscount?.$id === discount.$id}
+						onClick={() => {
+							onSelectDiscount(discount);
+							setDiscountMenuAnchor(null);
+						}}
+					>
+						{discount.name} ({formatDiscountAmount(discount)})
+					</MenuItem>
+				))}
+				{appliedDiscount && (
+					<MenuItem
+						onClick={() => {
+							onSelectDiscount(null);
+							setDiscountMenuAnchor(null);
+						}}
+					>
+						Clear discount
+					</MenuItem>
+				)}
+			</Menu>
 		</Box>
 	);
 };

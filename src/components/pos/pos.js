@@ -27,10 +27,11 @@ const POS = () => {
 		config,
 		categories,
 		items,
+		discounts,
 		refreshCategories,
 		refreshItems,
+		refreshDiscounts,
 		refreshData,
-		settings,
 		uniqueId,
 		currentUser,
 	} = useAppwrite();
@@ -51,8 +52,6 @@ const POS = () => {
 		stopTransactionInProgress,
 	} = useStripe();
 
-	const member_discount = settings ? settings.member_discount : 0;
-
 	// formatCAD is imported from shared utils
 
 	const [cart, setCart] = useState([]);
@@ -63,7 +62,7 @@ const POS = () => {
 	const [changeDue, setChangeDue] = useState(0);
 	const [discount, setDiscount] = useState(0);
 	const [total, setTotal] = useState(0);
-	const [member_discount_applied, setMemberDiscountApplied] = useState(false);
+	const [appliedDiscount, setAppliedDiscount] = useState(null);
 	const transactionId = useRef(null);
 	const [cashModalOpen, setCashModalOpen] = useState(false);
 	const [openSalesReport, setOpenSalesReport] = useState(false);
@@ -203,9 +202,12 @@ const POS = () => {
 
 	const calculateTotal = () => {
 		let newTotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
-		if (member_discount_applied) {
-			let discountAmount = (newTotal * member_discount) / 100;
-			discountAmount = parseInt(discountAmount);
+		if (appliedDiscount) {
+			let discountAmount =
+				appliedDiscount.type === "percent"
+					? (newTotal * (appliedDiscount.amount || 0)) / 100
+					: appliedDiscount.amount || 0;
+			discountAmount = Math.min(parseInt(discountAmount) || 0, newTotal);
 			setDiscount(discountAmount);
 			newTotal -= discountAmount;
 		} else {
@@ -327,12 +329,12 @@ const POS = () => {
 		};
 	}, [processBarcode]);
 
-	const applyMemberDiscount = () => {
-		if (member_discount_applied) {
-			setMemberDiscountApplied(false);
+	const selectDiscount = (discountOption) => {
+		if (!discountOption || appliedDiscount?.$id === discountOption.$id) {
+			setAppliedDiscount(null);
 			setDiscount(0);
 		} else {
-			setMemberDiscountApplied(true);
+			setAppliedDiscount(discountOption);
 		}
 	};
 
@@ -347,7 +349,7 @@ const POS = () => {
 	function clearCart() {
 		// Use the util to get the canonical reset values, then apply them to state
 		const reset = clearCartStateUtil();
-		setMemberDiscountApplied(reset.member_discount_applied);
+		setAppliedDiscount(reset.appliedDiscount);
 		setDiscount(reset.discount);
 		setCart(reset.cart);
 		setGiftcard(null);
@@ -473,10 +475,14 @@ const POS = () => {
 								quantity: item.quantity,
 								amount: parseInt(item.price) * item.quantity,
 							})),
-							...(member_discount_applied
+							...(appliedDiscount
 								? [
 									{
-										description: "Member Discount\n\t\t(" + member_discount + "% off)",
+										description:
+											appliedDiscount.name +
+											(appliedDiscount.type === "percent"
+												? "\n\t\t(" + appliedDiscount.amount + "% off)"
+												: ""),
 										quantity: 1,
 										amount: -1 * parseInt(discount),
 									},
@@ -501,13 +507,14 @@ const POS = () => {
 					});
 			}
 		}
-	}, [cart, discount, calculateTotal, terminal, terminalReady, total]);
+	}, [cart, discount, appliedDiscount, calculateTotal, terminal, terminalReady, total]);
 
 	useEffect(() => {
 		refreshCategories();
 		refreshItems();
+		refreshDiscounts();
 		refreshData();
-	}, [categories.length, items.length, refreshCategories, refreshItems, refreshData]);
+	}, [categories.length, items.length, refreshCategories, refreshItems, refreshDiscounts, refreshData]);
 
 	const filteredItems = useMemo(() => {
 		const query = searchQuery.trim().toLowerCase();
@@ -619,8 +626,9 @@ const POS = () => {
 			<Cart
 				cart={cart}
 				formatCAD={formatCAD}
-				member_discount_applied={member_discount_applied}
-				applyMemberDiscount={applyMemberDiscount}
+				discounts={discounts}
+				appliedDiscount={appliedDiscount}
+				onSelectDiscount={selectDiscount}
 				clearCart={clearCart}
 				removeItemFromCart={removeItemFromCart}
 				onIncrement={addItemToCart}

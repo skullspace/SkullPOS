@@ -85,7 +85,7 @@ export function removeItemFromCart(cart, itemId, all = false) {
  */
 export function clearCartState() {
 	return {
-		member_discount_applied: false,
+		appliedDiscount: null,
 		discount: 0,
 		cart: [],
 	};
