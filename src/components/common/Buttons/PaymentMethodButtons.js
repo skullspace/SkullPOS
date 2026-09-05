@@ -11,6 +11,7 @@ import React, { useState } from "react";
 import { Box, Button, Menu, MenuItem, Tooltip } from "@mui/material";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import MoneyIcon from "@mui/icons-material/AttachMoney";
+import CallSplitIcon from "@mui/icons-material/CallSplit";
 import { formatCAD } from "../../../utils/format";
 
 /**
@@ -61,6 +62,20 @@ const PaymentMethodButtons = ({
 				gap: 0.5,
 			}}
 		>
+			{/* Split Payment Button -- spans the full row above the rest,
+			since it's a less-common path than the three primary methods */}
+			<Button
+				startIcon={<CallSplitIcon fontSize="small" />}
+				variant={currentMethod === "split" ? "outlined" : "text"}
+				fullWidth
+				size="small"
+				sx={{ gridColumn: "1 / -1", fontSize: "0.8rem" }}
+				onClick={() => onMethodChange("split")}
+				disabled={isProcessing}
+			>
+				Split Payment
+			</Button>
+
 			{/* Card Payment Button */}
 			<Tooltip title={isCardDisabled ? "Terminal not ready" : "Pay with card"}>
 				<span style={{ display: "block" }}>

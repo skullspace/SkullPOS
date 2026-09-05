@@ -11,7 +11,7 @@
  * allowing flexible testing and configuration.
  */
 
-import { recordCardPayment } from "./transactionStatus";
+import { recordPayment } from "./splitPayment";
 
 /**
  * Factory function to create card payment handler
@@ -85,9 +85,11 @@ export default function createHandleCardPayment(deps) {
 			// Record the payment server-side -- verified independently against
 			// the real Stripe API there, not trusted from this client response.
 			try {
-				const recordResult = await recordCardPayment({
+				const recordResult = await recordPayment({
 					functions,
 					transactionId,
+					method: "stripe",
+					amount: total,
 					paymentIntentId: result.id,
 				});
 				if (!recordResult.ok) {

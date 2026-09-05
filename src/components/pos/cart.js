@@ -10,6 +10,7 @@ import {
 	TextField,
 	Menu,
 	Switch,
+	Divider,
 } from "@mui/material";
 import { FormControl, FormControlLabel, MenuItem } from "@mui/material";
 import HamburgerMenuIcon from "@mui/icons-material/Menu";
@@ -18,6 +19,7 @@ import CartItem from "./cartItem";
 import PaymentMethodButtons from "../common/Buttons/PaymentMethodButtons";
 import CheckoutButton from "../common/Buttons/CheckoutButton";
 import GiftcardDisplay from "../common/Display/GiftcardDisplay";
+import SplitPaymentPanel from "./SplitPaymentPanel";
 
 const Cart = ({
 	cart,
@@ -45,6 +47,11 @@ const Cart = ({
 	hideAlcohol,
 	onToggleHideAlcohol,
 	onLogout,
+	functions,
+	chargeCard,
+	activeSplit,
+	onSplitComplete,
+	onSplitCancel,
 }) => {
 	const [manualOpen, setManualOpen] = useState(false);
 	const [manualValue, setManualValue] = useState("");
@@ -123,12 +130,14 @@ const Cart = ({
 							>
 								Fullscreen
 							</MenuItem>
+							<Divider />
 							<MenuItem onClick={() => setOpenSalesReport(true)}>
 								Sales Report
 							</MenuItem>
 							<MenuItem onClick={() => setOpenTransactions(true)}>
 								Transactions
 							</MenuItem>
+							<Divider />
 							<MenuItem
 								disableRipple
 								sx={{ "&:hover": { backgroundColor: "transparent" }, cursor: "default" }}
@@ -149,6 +158,7 @@ const Cart = ({
 									label="Hide alcohol items"
 								/>
 							</MenuItem>
+							<Divider />
 							<MenuItem
 								onClick={() => {
 									setMenuAnchorEl(null);
@@ -276,24 +286,38 @@ const Cart = ({
 						</Box>
 					</Box>
 				</Box>
-				<PaymentMethodButtons
-					currentMethod={paymentMethod}
-					onMethodChange={setPaymentMethod}
-					isTerminalReady={terminalReady}
-					discounts={discounts}
-					appliedDiscount={appliedDiscount}
-					onSelectDiscount={onSelectDiscount}
-					isProcessing={!!transactionInProgress}
-				/>
+				{activeSplit ? (
+					<SplitPaymentPanel
+						transactionId={activeSplit.id}
+						totalAmount={activeSplit.total}
+						functions={functions}
+						chargeCard={chargeCard}
+						terminalReady={terminalReady}
+						onComplete={onSplitComplete}
+						onCancel={onSplitCancel}
+					/>
+				) : (
+					<>
+						<PaymentMethodButtons
+							currentMethod={paymentMethod}
+							onMethodChange={setPaymentMethod}
+							isTerminalReady={terminalReady}
+							discounts={discounts}
+							appliedDiscount={appliedDiscount}
+							onSelectDiscount={onSelectDiscount}
+							isProcessing={!!transactionInProgress}
+						/>
 
-				<CheckoutButton
-					cartItemCount={cart.length}
-					isTerminalReady={terminalReady}
-					paymentMethod={paymentMethod}
-					onCheckout={checkout}
-					onClearCart={clearCart}
-					isProcessing={!!transactionInProgress}
-				/>
+						<CheckoutButton
+							cartItemCount={cart.length}
+							isTerminalReady={terminalReady}
+							paymentMethod={paymentMethod}
+							onCheckout={checkout}
+							onClearCart={clearCart}
+							isProcessing={!!transactionInProgress}
+						/>
+					</>
+				)}
 			</Box>
 		</Box>
 	);

@@ -1,27 +1,9 @@
+import { recordPayment } from "./splitPayment";
+
 // if on localhost, use test mode
 const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 
 const test = isLocalhost;
-
-// See AppwriteFunctions/functions/Transaction-ApplyGiftcard.
-const APPLY_GIFTCARD_FUNCTION_ID = "6a9c5c2421431904c1d0";
-
-/**
- * Applies a giftcard payment to a pending transaction via the
- * Transaction-ApplyGiftcard function -- this re-reads the transaction and
- * giftcard fresh server-side (never trusts a client-cached balance) and
- * decrements the giftcard atomically with the transaction update, so the
- * client never needs write access to either collection.
- *
- * @returns {Promise<{ok: boolean, applied?: number, remaining?: number, status?: string, paymentMethod?: string, error?: string}>}
- */
-export async function applyGiftcardToTransaction({ functions, transactionId, giftcardId }) {
-	const response = await functions.createExecution({
-		functionId: APPLY_GIFTCARD_FUNCTION_ID,
-		body: JSON.stringify({ transactionId, giftcardId }),
-	});
-	return JSON.parse(response.responseBody || "{}");
-}
 
 export default function createCheckout(deps) {
 	const {
@@ -45,6 +27,7 @@ export default function createCheckout(deps) {
 		setCheckoutError,
 		setCashModalOpen,
 		handleCardPayment,
+		onSplitStarted,
 	} = deps;
 
 	return async function checkout() {
@@ -88,10 +71,18 @@ export default function createCheckout(deps) {
 				return;
 			}
 
+			if (paymentMethod === "split") {
+				// Hand off to SplitPaymentPanel -- it drives the rest via
+				// recordPayment, one leg at a time, until payment_due hits 0.
+				setTransactionInProgress && setTransactionInProgress(false);
+				onSplitStarted && onSplitStarted(document.$id, transaction.total);
+				return;
+			}
+
 			if (paymentMethod === "giftcard") {
-				// apply giftcard balance (may be full or partial) -- server-side,
-				// so the actual current balance is what's charged, not whatever
-				// this client last cached.
+				// apply as much of the giftcard's balance as covers the total
+				// (may be full or partial) -- the actual current balance is
+				// re-checked server-side, not whatever this client last cached.
 				const gift = getGiftcard ? getGiftcard() : null;
 				if (!gift) {
 					setCheckoutError && setCheckoutError("No giftcard loaded");
@@ -99,11 +90,15 @@ export default function createCheckout(deps) {
 					return;
 				}
 
+				const applyAmount = Math.min(parseInt(gift.balance) || 0, parseInt(getTotal ? getTotal() : 0));
+
 				let applyResult;
 				try {
-					applyResult = await applyGiftcardToTransaction({
+					applyResult = await recordPayment({
 						functions,
 						transactionId: document.$id,
+						method: "giftcard",
+						amount: applyAmount,
 						giftcardId: gift.$id,
 					});
 					if (!applyResult.ok) throw new Error(applyResult.error || "Failed to apply giftcard");
@@ -115,7 +110,7 @@ export default function createCheckout(deps) {
 				}
 
 				// update local usage state so UI can reflect partial/full
-				setGiftcardUsage && setGiftcardUsage({ applied: applyResult.applied, remaining: applyResult.remaining });
+				setGiftcardUsage && setGiftcardUsage({ applied: applyAmount, remaining: applyResult.remaining });
 
 				if (applyResult.remaining <= 0) {
 					// fully paid by giftcard — transaction already recorded as

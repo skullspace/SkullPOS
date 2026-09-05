@@ -32,6 +32,51 @@ const modalStyle = {
 	m: 0,
 };
 
+/**
+ * A single stat card showing an amount and, when a comparison period is
+ * available (staff callers only -- see Sales-Report's `previous` field),
+ * a delta against the immediately-preceding period of equal length.
+ */
+function StatCard({ label, value, previousValue }) {
+	let delta = null;
+	if (previousValue !== undefined && previousValue !== null) {
+		if (previousValue === 0) {
+			delta = value > 0 ? { text: "New", color: "success.main" } : null;
+		} else {
+			const pct = ((value - previousValue) / Math.abs(previousValue)) * 100;
+			delta = {
+				text: `${pct >= 0 ? "+" : ""}${pct.toFixed(0)}% vs last period`,
+				color: pct >= 0 ? "success.main" : "error.main",
+			};
+		}
+	}
+
+	return (
+		<Box
+			sx={{
+				border: "1px solid",
+				borderColor: "divider",
+				borderRadius: 1,
+				p: 1.5,
+				flex: "1 1 150px",
+				minWidth: 150,
+			}}
+		>
+			<Typography variant="body2" color="text.secondary">
+				{label}
+			</Typography>
+			<Typography variant="h6" sx={{ fontWeight: 700 }}>
+				{formatCAD(value)}
+			</Typography>
+			{delta && (
+				<Typography variant="caption" sx={{ color: delta.color }}>
+					{delta.text}
+				</Typography>
+			)}
+		</Box>
+	);
+}
+
 const SalesReport = ({ open, onClose, restricted }) => {
 	const { fetchSalesReport } = useAppwrite();
 	const [loading, setLoading] = React.useState(false);
@@ -298,51 +343,32 @@ const SalesReport = ({ open, onClose, restricted }) => {
 							{reportData ? (
 								<Box>
 									<Box>
-										<Box
-											sx={{
-												display: "flex",
-												justifyContent: "space-between",
-											}}
-										>
-											<Typography>Sale Volume:</Typography>
-											<Typography>{formatCAD(reportData.totalSales)}</Typography>
-										</Box>
-										<hr />
-										<Box
-											sx={{
-												display: "flex",
-												justifyContent: "space-between",
-											}}
-										>
-											<Typography>Alcohol:</Typography>
-											<Typography>{formatCAD(reportData.alcoholAmount)}</Typography>
-										</Box>
-										<Box
-											sx={{
-												display: "flex",
-												justifyContent: "space-between",
-											}}
-										>
-											<Typography>Food:</Typography>
-											<Typography>{formatCAD(reportData.foodAmount)}</Typography>
-										</Box>
-										<Box
-											sx={{
-												display: "flex",
-												justifyContent: "space-between",
-											}}
-										>
-											<Typography>Non Alcoholic Drinks:</Typography>
-											<Typography>{formatCAD(reportData.nonAlcoholicDrinksAmount)}</Typography>
-										</Box>
-										<Box
-											sx={{
-												display: "flex",
-												justifyContent: "space-between",
-											}}
-										>
-											<Typography>Other:</Typography>
-											<Typography>{formatCAD(reportData.otherAmountSold)}</Typography>
+										<Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mb: 1 }}>
+											<StatCard
+												label="Sale Volume"
+												value={reportData.totalSales}
+												previousValue={reportData.previous?.totalSales}
+											/>
+											<StatCard
+												label="Alcohol"
+												value={reportData.alcoholAmount}
+												previousValue={reportData.previous?.alcoholAmount}
+											/>
+											<StatCard
+												label="Food"
+												value={reportData.foodAmount}
+												previousValue={reportData.previous?.foodAmount}
+											/>
+											<StatCard
+												label="Non Alcoholic Drinks"
+												value={reportData.nonAlcoholicDrinksAmount}
+												previousValue={reportData.previous?.nonAlcoholicDrinksAmount}
+											/>
+											<StatCard
+												label="Other"
+												value={reportData.otherAmountSold}
+												previousValue={reportData.previous?.otherAmountSold}
+											/>
 										</Box>
 
 										<hr />

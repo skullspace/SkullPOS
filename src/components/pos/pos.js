@@ -20,7 +20,7 @@ import {
 	clearCartState as clearCartStateUtil,
 } from "../../utils/cartUtils";
 import { findGiftcardByUPC } from "../../utils/giftcard";
-import { applyGiftcardToTransaction } from "../../utils/checkout";
+import { recordPayment } from "../../utils/splitPayment";
 import { setTransactionStatus } from "../../utils/transactionStatus";
 import { setItemEnabled } from "../../utils/itemVisibility";
 
@@ -76,6 +76,21 @@ const POS = () => {
 	const [openSalesReport, setOpenSalesReport] = useState(false);
 	const [openTransactions, setOpenTransactions] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
+	// Non-null while a "Split Payment" checkout is in progress -- the
+	// pending transaction already exists, and SplitPaymentPanel drives the
+	// rest via recordPayment, one leg at a time.
+	const [activeSplit, setActiveSplit] = useState(null);
+
+	const handleSplitComplete = useCallback(() => {
+		setActiveSplit(null);
+		clearCart();
+		setCheckoutSuccess(true);
+		setPaymentMethod("stripe");
+	}, []);
+
+	const handleSplitCancel = useCallback(() => {
+		setActiveSplit(null);
+	}, []);
 
 	const localHandleCancelStripePayment = useCallback(() => {
 		handleCancelStripePayment();
@@ -135,14 +150,17 @@ const POS = () => {
 				}
 
 				try {
-					const result = await applyGiftcardToTransaction({
+					const applyAmount = Math.min(parseInt(gift.balance) || 0, parseInt(total || 0));
+					const result = await recordPayment({
 						functions,
 						transactionId: transactionId.current,
+						method: "giftcard",
+						amount: applyAmount,
 						giftcardId: gift.$id,
 					});
 					if (!result.ok) throw new Error(result.error || "Failed to apply giftcard");
 
-					setGiftcard && setGiftcard({ ...gift, balance: gift.balance - result.applied });
+					setGiftcard && setGiftcard({ ...gift, balance: gift.balance - applyAmount });
 
 					if (result.remaining <= 0) {
 						setTransactionInProgress(false);
@@ -371,6 +389,7 @@ const POS = () => {
 				clearCart,
 				setCheckoutSuccess,
 				setPaymentMethod,
+				onSplitStarted: (id, totalAmount) => setActiveSplit({ id, total: totalAmount }),
 			}),
 		[
 			databases,
@@ -412,11 +431,12 @@ const POS = () => {
 		clearCart();
 		setPaymentMethod("stripe");
 		setAmountReceived(0);
-		setTransactionStatus({
+		recordPayment({
 			functions,
 			transactionId: transactionId.current,
-			status: "complete",
-		}).catch((err) => console.error("Failed to mark transaction complete", err));
+			method: "cash",
+			amount: total,
+		}).catch((err) => console.error("Failed to record cash payment", err));
 	}
 
 	useEffect(() => {
@@ -633,6 +653,11 @@ const POS = () => {
 				onLogout={logout}
 				hideAlcohol={hideAlcohol}
 				onToggleHideAlcohol={(checked) => setHideAlcohol(checked)}
+				functions={functions}
+				chargeCard={chargeCard}
+				activeSplit={activeSplit}
+				onSplitComplete={handleSplitComplete}
+				onSplitCancel={handleSplitCancel}
 			/>
 			<ProcessingModal
 				isProcessing={transactionInProgress}

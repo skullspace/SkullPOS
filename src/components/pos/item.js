@@ -7,13 +7,16 @@ const Item = ({ item, onAdd, disableItem, quantityInCart = 0 }) => {
 	const longPressTriggered = React.useRef(false);
 	const pointerIdRef = React.useRef(null);
 	const LONG_PRESS_MS = 500;
+	// `disabled` here is register-sellability, toggled live by the
+	// long-press gesture below -- it's intentionally NOT initialized from
+	// `item.enabled_menu` (that field controls the separate customer-facing
+	// MEnu display, which switched to `enabled_pos` for its own visibility
+	// gate; conflating the two here meant most of the real catalog -- which
+	// defaults enabled_menu to false until someone curates the customer
+	// menu -- couldn't be added to cart at the register at all).
+	// `enabledPOS === false` below is the actual "not sellable" gate.
 	const [disabled, setDisabled] = React.useState(false);
 
-	React.useEffect(() => {
-		if (item.enabled_menu === false) {
-			setDisabled(true);
-		}
-	}, [item.enabled_menu]);
 	if (item && item.enabledPOS === false) return null;
 
 	const handlePointerDown = (e) => {

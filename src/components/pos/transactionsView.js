@@ -24,6 +24,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import { formatCAD } from "../../utils/format";
 import { refundTransaction } from "../../utils/refund";
+import { derivePaymentLegs, PAYMENT_METHOD_LABELS } from "../../utils/splitPayment";
 
 const modalStyle = {
 	position: "absolute",
@@ -56,6 +57,7 @@ function parseCart(cartJson) {
 function TransactionRow({ transaction, isRefunding, onRefund, restricted }) {
 	const [expanded, setExpanded] = React.useState(false);
 	const cart = React.useMemo(() => parseCart(transaction.cart), [transaction.cart]);
+	const paymentLegs = React.useMemo(() => derivePaymentLegs(transaction), [transaction]);
 
 	return (
 		<>
@@ -114,14 +116,15 @@ function TransactionRow({ transaction, isRefunding, onRefund, restricted }) {
 									<Typography variant="body2" color="text.secondary">Tip</Typography>
 									<Typography variant="body2">{formatCAD(transaction.tip || 0)}</Typography>
 								</Box>
-								<Box sx={{ display: "flex", justifyContent: "space-between" }}>
-									<Typography variant="body2" color="text.secondary">Gift Card Applied</Typography>
-									<Typography variant="body2">{formatCAD(transaction.giftcard_amount || 0)}</Typography>
-								</Box>
-								<Box sx={{ display: "flex", justifyContent: "space-between" }}>
-									<Typography variant="body2" color="text.secondary">Amount Paid</Typography>
-									<Typography variant="body2">{formatCAD(transaction.payment_due || 0)}</Typography>
-								</Box>
+								{paymentLegs.map((leg, i) => (
+									<Box key={i} sx={{ display: "flex", justifyContent: "space-between" }}>
+										<Typography variant="body2" color="text.secondary">
+											{PAYMENT_METHOD_LABELS[leg.method] || leg.method}
+											{paymentLegs.length > 1 ? ` (leg ${i + 1})` : ""}
+										</Typography>
+										<Typography variant="body2">{formatCAD(leg.amount || 0)}</Typography>
+									</Box>
+								))}
 								{transaction.CreatedBy && (
 									<Box sx={{ display: "flex", justifyContent: "space-between" }}>
 										<Typography variant="body2" color="text.secondary">Created By</Typography>
@@ -256,10 +259,23 @@ const TransactionsView = ({
 				<DialogTitle>Refund this transaction?</DialogTitle>
 				<DialogContent>
 					{pendingRefund && (
-						<Typography>
-							Refund {formatCAD(pendingRefund.total || 0)} paid by {pendingRefund.payment_method}
-							{pendingRefund.payment_method !== "cash" ? " -- this cannot be undone." : ", and hand the cash back."}
-						</Typography>
+						<>
+							<Typography sx={{ mb: 1.5 }}>
+								Refund {formatCAD(pendingRefund.total || 0)} -- this will reverse every payment below and
+								cannot be undone.
+							</Typography>
+							<Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+								{derivePaymentLegs(pendingRefund).map((leg, i) => (
+									<Box key={i} sx={{ display: "flex", justifyContent: "space-between" }}>
+										<Typography variant="body2" color="text.secondary">
+											{PAYMENT_METHOD_LABELS[leg.method] || leg.method}
+											{leg.method === "cash" ? " (hand back physically)" : ""}
+										</Typography>
+										<Typography variant="body2">{formatCAD(leg.amount || 0)}</Typography>
+									</Box>
+								))}
+							</Box>
+						</>
 					)}
 				</DialogContent>
 				<DialogActions>
