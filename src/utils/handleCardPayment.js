@@ -1,15 +1,17 @@
 /**
  * handleCardPayment.js - Card payment processing logic
- * 
+ *
  * Handles Stripe card payments:
  * - Charges card via Stripe Terminal
  * - Records transaction in database
  * - Shows payment status to user
  * - Supports retry logic for failed payments
- * 
+ *
  * This is a factory function that creates a handler with injected dependencies,
  * allowing flexible testing and configuration.
  */
+
+import { recordCardPayment } from "./transactionStatus";
 
 /**
  * Factory function to create card payment handler
@@ -17,8 +19,7 @@
  * @param {Object} deps - Dependencies object
  * @param {Function} deps.chargeCard - Function to charge card via Stripe Terminal
  * @param {Object} deps.terminal - Stripe Terminal instance
- * @param {Object} deps.databases - Appwrite databases instance
- * @param {Object} deps.config - Application configuration with database IDs
+ * @param {Object} deps.functions - Appwrite Functions client
  * @param {Function} deps.setStripeAlert - Function to show alerts
  * @param {Function} deps.setTransactionInProgress - Update transaction state
  * @param {Function} deps.setCheckoutError - Set checkout error message
@@ -34,8 +35,7 @@ export default function createHandleCardPayment(deps) {
 	const {
 		chargeCard,
 		terminal,
-		databases,
-		config,
+		functions,
 		setStripeAlert,
 		setTransactionInProgress,
 		setCheckoutError,
@@ -82,21 +82,19 @@ export default function createHandleCardPayment(deps) {
 			// Call Stripe Terminal to charge card
 			const result = await chargeCard(total, retrying);
 
-			// Update transaction record with payment details
+			// Record the payment server-side -- verified independently against
+			// the real Stripe API there, not trusted from this client response.
 			try {
-				await databases.updateDocument({
-					databaseId: config.databases.bar.id,
-					collectionId: config.databases.bar.collections.transactions,
-					documentId: transactionId,
-					data: {
-						status: "complete",
-						tip: parseInt(result.amount_details?.tip?.amount || 0),
-						stripe_id: result.id,
-						transaction_data: JSON.stringify(result),
-					},
+				const recordResult = await recordCardPayment({
+					functions,
+					transactionId,
+					paymentIntentId: result.id,
 				});
+				if (!recordResult.ok) {
+					console.error("Failed to record card payment:", recordResult.error);
+				}
 			} catch (dbErr) {
-				console.error("Failed to update transaction document:", dbErr);
+				console.error("Failed to record card payment:", dbErr);
 			}
 
 			// Show success message with payment details

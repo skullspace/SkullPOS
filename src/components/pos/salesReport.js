@@ -32,7 +32,7 @@ const modalStyle = {
 	m: 0,
 };
 
-const SalesReport = ({ open, onClose }) => {
+const SalesReport = ({ open, onClose, restricted }) => {
 	const { fetchSalesReport } = useAppwrite();
 	const [loading, setLoading] = React.useState(false);
 	const [reportData, setReportData] = React.useState(null);
@@ -40,6 +40,24 @@ const SalesReport = ({ open, onClose }) => {
 	const [order, setOrder] = React.useState("desc");
 	const [startDate, setStartDate] = React.useState("");
 	const [endDate, setEndDate] = React.useState("");
+
+	// A pin-mode cashier session can't look further back than 24 hours --
+	// fetchSalesReport clamps this server-side too, but reflecting it in the
+	// picker itself (instead of silently overriding a manual entry) is
+	// clearer for the person using it.
+	const earliestAllowedStr = React.useMemo(() => {
+		if (!restricted) return undefined;
+		const end = endDate ? new Date(endDate) : new Date();
+		return new Date(end.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
+	}, [restricted, endDate]);
+
+	const handleStartDateChange = (value) => {
+		if (restricted && earliestAllowedStr && (!value || value < earliestAllowedStr)) {
+			setStartDate(earliestAllowedStr);
+			return;
+		}
+		setStartDate(value);
+	};
 
 	// set end date to now by default
 	React.useEffect(() => {
@@ -55,7 +73,9 @@ const SalesReport = ({ open, onClose }) => {
 	}, [open]);
 
 	React.useEffect(() => {
-		if (startDate && endDate) {
+		// startDate is intentionally empty for "All Time" (no lower bound) --
+		// only endDate is required for a fetch to make sense.
+		if (endDate) {
 			setLoading(true);
 			getReport(startDate, endDate).finally(() => setLoading(false));
 		}
@@ -146,6 +166,12 @@ const SalesReport = ({ open, onClose }) => {
 	};
 
 	const handleQuickSelect = (range) => {
+		// "Last Week" and "All Time" aren't offered as buttons in restricted
+		// mode, but guard here too in case this is ever reached programmatically.
+		if (restricted && (range === "week" || range === "alltime")) {
+			range = "24hours";
+		}
+
 		const now = new Date();
 		let start = new Date();
 
@@ -211,20 +237,26 @@ const SalesReport = ({ open, onClose }) => {
 					<Button size="small" variant="outlined" onClick={() => handleQuickSelect("24hours")}>
 						Last 24 Hours
 					</Button>
-					<Button size="small" variant="outlined" onClick={() => handleQuickSelect("week")}>
-						Last Week
-					</Button>
-					<Button size="small" variant="outlined" onClick={() => handleQuickSelect("alltime")}>
-						All Time
-					</Button>
+					{!restricted && (
+						<>
+							<Button size="small" variant="outlined" onClick={() => handleQuickSelect("week")}>
+								Last Week
+							</Button>
+							<Button size="small" variant="outlined" onClick={() => handleQuickSelect("alltime")}>
+								All Time
+							</Button>
+						</>
+					)}
 				</Box>
 				<Box sx={{ display: "flex", gap: 2, mb: 2 }}>
 					<TextField
 						type="datetime-local"
 						label="Start Date"
 						value={startDate}
-						onChange={(e) => setStartDate(e.target.value)}
+						onChange={(e) => handleStartDateChange(e.target.value)}
 						InputLabelProps={{ shrink: true }}
+						inputProps={restricted ? { min: earliestAllowedStr } : undefined}
+						helperText={restricted ? "Restricted to the last 24 hours" : undefined}
 						size="small"
 						sx={{ flex: 1 }}
 					/>

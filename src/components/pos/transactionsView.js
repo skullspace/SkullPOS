@@ -53,7 +53,7 @@ function parseCart(cartJson) {
 	}
 }
 
-function TransactionRow({ transaction, isRefunding, onRefund }) {
+function TransactionRow({ transaction, isRefunding, onRefund, restricted }) {
 	const [expanded, setExpanded] = React.useState(false);
 	const cart = React.useMemo(() => parseCart(transaction.cart), [transaction.cart]);
 
@@ -130,7 +130,7 @@ function TransactionRow({ transaction, isRefunding, onRefund }) {
 								)}
 							</Box>
 
-							{transaction.status === "complete" && (
+							{transaction.status === "complete" && !restricted && (
 								<Button
 									sx={{ mt: 2 }}
 									size="small"
@@ -153,17 +153,22 @@ function TransactionRow({ transaction, isRefunding, onRefund }) {
 	);
 }
 
-const TransactionsView = ({ open, onClose, databases, config, functions, fetchTransactions, setStripeAlert }) => {
+const TransactionsView = ({
+	open,
+	onClose,
+	functions,
+	fetchTransactions,
+	setStripeAlert,
+	restricted,
+}) => {
 	const [loading, setLoading] = React.useState(false);
 	const [transactions, setTransactions] = React.useState([]);
 	const [pendingRefund, setPendingRefund] = React.useState(null);
 	const [refundingId, setRefundingId] = React.useState(null);
 
 	const loadRecent = React.useCallback(() => {
-		const now = new Date();
-		const start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 		setLoading(true);
-		fetchTransactions(start, now)
+		fetchTransactions()
 			.then(setTransactions)
 			.catch((err) => {
 				console.error("Error fetching transactions:", err);
@@ -178,11 +183,11 @@ const TransactionsView = ({ open, onClose, databases, config, functions, fetchTr
 
 	const doRefund = async () => {
 		const transaction = pendingRefund;
-		if (!transaction) return;
+		if (!transaction || restricted) return;
 		setPendingRefund(null);
 		setRefundingId(transaction.$id);
 		try {
-			await refundTransaction({ databases, config, functions, transaction });
+			await refundTransaction({ functions, transaction });
 			setStripeAlert({ active: true, message: "Transaction refunded", type: "success" });
 			loadRecent();
 		} catch (err) {
@@ -236,6 +241,7 @@ const TransactionsView = ({ open, onClose, databases, config, functions, fetchTr
 												transaction={t}
 												isRefunding={refundingId === t.$id}
 												onRefund={setPendingRefund}
+												restricted={restricted}
 											/>
 										))
 									)}

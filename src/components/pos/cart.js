@@ -44,6 +44,7 @@ const Cart = ({
 	setOpenTransactions,
 	hideAlcohol,
 	onToggleHideAlcohol,
+	onLogout,
 }) => {
 	const [manualOpen, setManualOpen] = useState(false);
 	const [manualValue, setManualValue] = useState("");
@@ -147,6 +148,14 @@ const Cart = ({
 									}
 									label="Hide alcohol items"
 								/>
+							</MenuItem>
+							<MenuItem
+								onClick={() => {
+									setMenuAnchorEl(null);
+									onLogout && onLogout();
+								}}
+							>
+								Logout
 							</MenuItem>
 						</Menu>
 						<Menu

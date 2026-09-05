@@ -19,7 +19,10 @@ import {
 	removeItemFromCart as removeItemFromCartUtil,
 	clearCartState as clearCartStateUtil,
 } from "../../utils/cartUtils";
-import { findGiftcardByUPC, decrementGiftcardBalance } from "../../utils/giftcard";
+import { findGiftcardByUPC } from "../../utils/giftcard";
+import { applyGiftcardToTransaction } from "../../utils/checkout";
+import { setTransactionStatus } from "../../utils/transactionStatus";
+import { setItemEnabled } from "../../utils/itemVisibility";
 
 
 const POS = () => {
@@ -37,6 +40,8 @@ const POS = () => {
 		currentUser,
 		functions,
 		fetchTransactions,
+		logout,
+		pinMode,
 	} = useAppwrite();
 
 	const {
@@ -76,37 +81,18 @@ const POS = () => {
 		handleCancelStripePayment();
 		setTransactionInProgress(false);
 
-		databases.updateDocument({
-			databaseId: config.databases.bar.id,
-			collectionId: config.databases.bar.collections.transactions,
-			documentId: transactionId.current,
-			data: {
-				status: "cancelled",
-			},
-		});
+		setTransactionStatus({
+			functions,
+			transactionId: transactionId.current,
+			status: "cancelled",
+		}).catch((err) => console.error("Failed to mark transaction cancelled", err));
 	}, []);
 
 	const disableItem = useCallback(
 		(itemId, toEnable = false) => {
-			if (toEnable) {
-				databases.updateDocument({
-					databaseId: config.databases.bar.id,
-					collectionId: config.databases.bar.collections.items,
-					documentId: itemId,
-					data: {
-						enabled_menu: true,
-					},
-				});
-			} else if (!toEnable) {
-				databases.updateDocument({
-					databaseId: config.databases.bar.id,
-					collectionId: config.databases.bar.collections.items,
-					documentId: itemId,
-					data: {
-						enabled_menu: false,
-					},
-				});
-			}
+			setItemEnabled({ functions, itemId, enabled: !!toEnable }).catch((err) =>
+				console.error("Failed to update item enabled state", err),
+			);
 			let itemName = items.find((item) => item.$id === itemId)?.name || "Unknown Item";
 			setStripeAlert({
 				active: true,
@@ -114,7 +100,7 @@ const POS = () => {
 				type: "info",
 			});
 		},
-		[items],
+		[functions, items],
 	);
 
 	// Local, staff-side convenience: hide alcohol items/categories from this
@@ -148,36 +134,17 @@ const POS = () => {
 					return;
 				}
 
-				const paymentDue = parseInt(total || 0);
-				const giftBalance = parseInt(gift.balance || 0);
-				const applied = Math.min(giftBalance, paymentDue);
-				const remaining = paymentDue - applied;
-
 				try {
-					await databases.updateDocument({
-						databaseId: config.databases.bar.id,
-						collectionId: config.databases.bar.collections.transactions,
-						documentId: transactionId.current,
-						data: {
-							giftcards: [gift.$id],
-							giftcard_amount: applied,
-							payment_due: remaining,
-							payment_method: remaining > 0 ? "giftcard+stripe" : "giftcard",
-							status: remaining > 0 ? "pending" : "complete",
-						},
-					});
-
-					const newBalance = await decrementGiftcardBalance({
-						databases,
-						config,
+					const result = await applyGiftcardToTransaction({
+						functions,
+						transactionId: transactionId.current,
 						giftcardId: gift.$id,
-						currentBalance: giftBalance,
-						amount: applied,
 					});
+					if (!result.ok) throw new Error(result.error || "Failed to apply giftcard");
 
-					setGiftcard && setGiftcard({ ...gift, balance: newBalance });
+					setGiftcard && setGiftcard({ ...gift, balance: gift.balance - result.applied });
 
-					if (remaining <= 0) {
+					if (result.remaining <= 0) {
 						setTransactionInProgress(false);
 						setCheckoutSuccess(true);
 						clearCart();
@@ -187,7 +154,7 @@ const POS = () => {
 
 					// partial: charge remainder via card
 					if (handleCardPayment) {
-						await handleCardPayment(transactionId.current, true, remaining);
+						await handleCardPayment(transactionId.current, true, result.remaining);
 						return;
 					}
 				} catch (err) {
@@ -235,31 +202,14 @@ const POS = () => {
 
 	const handleGiftcard = useCallback(
 		async (code) => {
-			// basic giftcard lookup using configured collection if present
 			setStripeAlert({
 				active: true,
 				message: "Looking up giftcard...",
 				type: "info",
 			});
 
-			const collectionId =
-				config &&
-				config.databases &&
-				config.databases.bar &&
-				config.databases.bar.collections &&
-				config.databases.bar.collections.giftcards;
-
-			if (!collectionId) {
-				setStripeAlert({
-					active: true,
-					message: "Giftcards collection not configured",
-					type: "error",
-				});
-				return;
-			}
-
 			try {
-				const found = await findGiftcardByUPC({ databases, config, code });
+				const found = await findGiftcardByUPC({ functions, code });
 
 				if (!found) {
 					setStripeAlert({
@@ -287,7 +237,7 @@ const POS = () => {
 				});
 			}
 		},
-		[databases, config, setStripeAlert],
+		[functions, setStripeAlert],
 	);
 
 	const processBarcode = useMemo(
@@ -371,8 +321,7 @@ const POS = () => {
 			createHandleCardPayment({
 				chargeCard,
 				terminal,
-				databases,
-				config,
+				functions,
 				setStripeAlert,
 				setTransactionInProgress,
 				setCheckoutError,
@@ -386,8 +335,7 @@ const POS = () => {
 		[
 			chargeCard,
 			terminal,
-			databases,
-			config,
+			functions,
 			setStripeAlert,
 			setTransactionInProgress,
 			setCheckoutError,
@@ -405,6 +353,7 @@ const POS = () => {
 			createCheckout({
 				databases,
 				config,
+				functions,
 				uniqueId,
 				getCreatedBy: () => currentUser?.name || currentUser?.email || null,
 				getCart: () => cart,
@@ -426,6 +375,7 @@ const POS = () => {
 		[
 			databases,
 			config,
+			functions,
 			uniqueId,
 			currentUser,
 			cart,
@@ -462,14 +412,11 @@ const POS = () => {
 		clearCart();
 		setPaymentMethod("stripe");
 		setAmountReceived(0);
-		databases.updateDocument({
-			databaseId: config.databases.bar.id,
-			collectionId: config.databases.bar.collections.transactions,
-			documentId: transactionId.current,
-			data: {
-				status: "complete",
-			},
-		});
+		setTransactionStatus({
+			functions,
+			transactionId: transactionId.current,
+			status: "complete",
+		}).catch((err) => console.error("Failed to mark transaction complete", err));
 	}
 
 	useEffect(() => {
@@ -683,6 +630,7 @@ const POS = () => {
 				}}
 				setOpenSalesReport={setOpenSalesReport}
 				setOpenTransactions={setOpenTransactions}
+				onLogout={logout}
 				hideAlcohol={hideAlcohol}
 				onToggleHideAlcohol={(checked) => setHideAlcohol(checked)}
 			/>
@@ -731,15 +679,18 @@ const POS = () => {
 					})
 				}
 			/>
-			<SalesReport open={openSalesReport} onClose={() => setOpenSalesReport(false)} />
+			<SalesReport
+				open={openSalesReport}
+				onClose={() => setOpenSalesReport(false)}
+				restricted={!!pinMode}
+			/>
 			<TransactionsView
 				open={openTransactions}
 				onClose={() => setOpenTransactions(false)}
-				databases={databases}
-				config={config}
 				functions={functions}
 				fetchTransactions={fetchTransactions}
 				setStripeAlert={setStripeAlert}
+				restricted={!!pinMode}
 			/>
 		</Box>
 	);

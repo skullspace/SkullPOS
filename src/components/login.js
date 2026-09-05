@@ -13,6 +13,7 @@ import React, { useState } from "react";
 import { useAppwrite } from "../utils/api";
 import { useNavigate } from "react-router-dom";
 import AuthForm from "./auth/AuthForm";
+import PinEntryDialog from "./PinEntryDialog";
 
 /**
  * Login component
@@ -29,6 +30,7 @@ const Login = () => {
 		password: "",
 	});
 	const [errorMessage, setErrorMessage] = useState("");
+	const [pinDialogOpen, setPinDialogOpen] = useState(false);
 
 	/**
 	 * Handle field value changes
@@ -80,19 +82,26 @@ const Login = () => {
 			label: "Register",
 			onClick: handleNavigateToRegister,
 		},
+		{
+			label: "Quick Access PIN",
+			onClick: () => setPinDialogOpen(true),
+		},
 	];
 
 	return (
-		<AuthForm
-			title="Login"
-			fields={loginFields}
-			values={formValues}
-			onFieldChange={handleFieldChange}
-			errorMessage={errorMessage}
-			onSubmit={handleLogin}
-			submitButtonLabel="Login"
-			secondaryActions={secondaryActions}
-		/>
+		<>
+			<AuthForm
+				title="Login"
+				fields={loginFields}
+				values={formValues}
+				onFieldChange={handleFieldChange}
+				errorMessage={errorMessage}
+				onSubmit={handleLogin}
+				submitButtonLabel="Login"
+				secondaryActions={secondaryActions}
+			/>
+			<PinEntryDialog open={pinDialogOpen} onClose={() => setPinDialogOpen(false)} />
+		</>
 	);
 };
 

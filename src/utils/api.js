@@ -17,6 +17,7 @@
 import { Client as Appwrite, Databases, Account, ID, Functions, Query } from "appwrite";
 
 import { useMemo, useState, useEffect, useCallback } from "react";
+import { verifyPin, getPinMode, setPinMode, clearPinMode } from "./pin";
 
 // Detect environment: use test mode if running on localhost
 const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
@@ -237,6 +238,7 @@ export function useAppwrite() {
 	}, [functions]);
 
 	const [currentUser, setCurrentUser] = useState(null);
+	const [pinMode, setPinModeState] = useState(() => getPinMode());
 
 	/**
 	 * Check active session on component mount
@@ -293,12 +295,45 @@ export function useAppwrite() {
 	);
 
 	/**
+	 * Quick-access PIN login. Verifies the PIN via the Verify-Pin function,
+	 * then (if it doesn't already have one) creates an anonymous session so
+	 * the device has "users"-level permission to create transactions.
+	 * Restricted-mode gating (no refunds, sales reports capped to 24 hours)
+	 * lives wherever `pinMode` is read, not here.
+	 *
+	 * @param {string} pin
+	 * @returns {Promise<{ok: boolean, label?: string}>}
+	 * @throws {Error} If the PIN doesn't match
+	 */
+	const loginWithPin = useCallback(
+		async (pin) => {
+			const result = await verifyPin({ functions, pin });
+			if (!result.ok) {
+				throw new Error("Incorrect PIN");
+			}
+
+			try {
+				await account.get();
+			} catch (err) {
+				await account.createAnonymousSession();
+			}
+
+			setPinMode(result.label);
+			setPinModeState({ label: result.label || null });
+			return result;
+		},
+		[functions, account],
+	);
+
+	/**
 	 * User logout
 	 * Deletes current session and redirects to login
 	 */
 	async function logout() {
 		try {
 			await account.deleteSession({ sessionId: "current" });
+			clearPinMode();
+			setPinModeState(null);
 			window.location.href = "/login";
 		} catch (err) {
 			console.error("error logging out", err);
@@ -346,209 +381,41 @@ export function useAppwrite() {
 	 * @param {Date} endDate - Report end date
 	 * @returns {Promise<Object>} Sales report object with aggregated metrics
 	 */
+	// Function IDs -- see AppwriteFunctions/functions/Sales-Report and
+	// .../Transactions-List. The client has no read access to the
+	// Transactions collection at all (see the POS PIN-system security
+	// plan), so both of these go through server-side functions instead of
+	// databases.listDocuments -- the functions themselves enforce the 24h
+	// clamp for non-staff callers based on real team membership, not a
+	// client-passed flag.
+	const SALES_REPORT_FUNCTION_ID = "6a9c687535280f239b5f";
+	const TRANSACTIONS_LIST_FUNCTION_ID = "6a9c687ec05e99a6f1a8";
+
 	async function fetchSalesReport(startDate, endDate) {
-		startDate = new Date(startDate).toISOString();
-		endDate = new Date(endDate).toISOString();
-
-		const transactions = await fetchAllDocuments(
-			databases,
-			config.databases.bar.id,
-			config.databases.bar.collections.transactions,
-			[
-				Query.equal("status", "complete"),
-				Query.notEqual("testing", true),
-				Query.greaterThanEqual("$createdAt", startDate),
-				Query.lessThanEqual("$createdAt", endDate),
-			],
-		);
-
-		// Look up categories by id (from live state) so sale-type
-		// classification below doesn't depend on hardcoded category IDs.
-		const categoriesById = {};
-		categories.forEach((c) => {
-			categoriesById[c.$id] = c;
+		const response = await functions.createExecution({
+			functionId: SALES_REPORT_FUNCTION_ID,
+			body: JSON.stringify({
+				startDate: startDate ? new Date(startDate).toISOString() : null,
+				endDate: new Date(endDate).toISOString(),
+				test,
+			}),
 		});
-
-		// Cost-per-unit for each ingredient, used to cost pos_items via their
-		// `ingredients` array (an ingredient's $id repeated once per unit used,
-		// e.g. a double shot lists the spirit twice -- Appwrite arrays/relationships
-		// have no native per-link quantity, so repetition stands in for it).
-		let ingredientCostById = {};
-		try {
-			const ingredientDocs = await fetchAllDocuments(
-				databases,
-				config.databases.bar.id,
-				config.databases.bar.collections.ingredients,
-			);
-			ingredientDocs.forEach((ing) => {
-				const caseQty = ing.case_qty || 1;
-				const contQty = ing.cont_qty || 1;
-				ingredientCostById[ing.$id] = (ing.case_cost || 0) / (caseQty * contQty);
-			});
-		} catch (err) {
-			console.error("error getting ingredients for COGS", err);
-		}
-
-		let ItemsSold = [],
-			totalSales = 0,
-			tips = 0,
-			giftcardAmount = 0,
-			cashAmount = 0,
-			cardAmount = 0,
-			discountAmount = 0,
-			cogs = 0,
-			amountPaid = 0,
-			alcoholAmount = 0,
-			foodAmount = 0,
-			nonAlcoholicDrinksAmount = 0,
-			otherAmountSold = 0;
-
-		// Return empty report if no transactions found
-		if (transactions.length === 0) {
-			return {
-				ItemsSold,
-				totalSales,
-				tips,
-				giftcardAmount,
-				cashAmount,
-				cardAmount,
-				discountAmount,
-				amountPaid,
-				cogs,
-				alcoholAmount,
-				foodAmount,
-				nonAlcoholicDrinksAmount,
-				otherAmountSold,
-			};
-		}
-		
-		// Aggregate transaction data
-		transactions.forEach((item) => {
-			let cart;
-			try {
-				cart = JSON.parse(item.cart) || [];
-			} catch (err) {
-				console.error("error parsing cart for transaction", item.$id, err);
-				cart = [];
-			}
-
-			cart.forEach((cartItem) => {
-				// Add or update item in sales list
-				if (!ItemsSold.find((i) => i.name === cartItem.name)) {
-					ItemsSold.push({
-						name: cartItem.name,
-						quantity: 0,
-						revenue: 0,
-						cogs: 0,
-					});
-				}
-				let existingItem = ItemsSold.find((i) => i.name === cartItem.name);
-				const quantity = cartItem.quantity || 0;
-				const itemCost = cartItem.price || 0;
-
-				existingItem.quantity += quantity;
-				existingItem.revenue += itemCost * quantity;
-
-				// Categorize sales by type using the live categories collection
-				// (by name) rather than hardcoded category IDs, so this keeps
-				// working if a category is ever recreated with a new ID.
-				// cartItem.alcohol (added 2026-02-09) is checked first since
-				// it's cheapest and covers transactions whose category lookup
-				// misses for any reason.
-				const catId =
-					cartItem.categories && typeof cartItem.categories === "object"
-						? cartItem.categories.$id
-						: cartItem.categories;
-				const cat = categoriesById[catId];
-				const isAlcohol = cartItem.alcohol === true || cat?.alcohol === true;
-				const catName = cat?.name || "";
-
-				if (isAlcohol) {
-					alcoholAmount += itemCost * quantity;
-				} else if (catName === "Food") {
-					foodAmount += itemCost * quantity;
-				} else if (catName.includes("Non-Alcoholic")) {
-					nonAlcoholicDrinksAmount += itemCost * quantity;
-				} else {
-					otherAmountSold += itemCost * quantity;
-				}
-
-				// Calculate cost of goods sold (COGS). Prefer the pos_items
-				// ingredient list (real per-unit costs); fall back to the
-				// legacy Items_old container_cost/drinks_per_cont fields for
-				// transactions from before the ingredients migration.
-				if (Array.isArray(cartItem.ingredients) && cartItem.ingredients.length > 0) {
-					const perUnitCogs = cartItem.ingredients.reduce(
-						(sum, ingredientId) => sum + (ingredientCostById[ingredientId] || 0),
-						0,
-					);
-					const itemCogs = perUnitCogs * quantity;
-					existingItem.cogs += itemCogs;
-					cogs += itemCogs;
-				} else if (cartItem.container_cost && cartItem.drinks_per_cont) {
-					let itemCoGS = cartItem.container_cost / cartItem.drinks_per_cont;
-					itemCoGS = itemCoGS + (cartItem.additional_drink_costs || 0);
-					const itemCogs = itemCoGS * quantity;
-					existingItem.cogs += itemCogs;
-					cogs += itemCogs;
-				}
-			});
-
-			// Aggregate transaction totals
-			totalSales += (item.total || 0) + (item.discount || 0);
-			amountPaid += item.payment_due || 0;
-			tips += item.tip || 0;
-			discountAmount += item.discount || 0;
-			giftcardAmount += item.giftcard_amount || 0;
-
-			// Break down by payment method
-			if (item.payment_method === "cash") {
-				cashAmount += item.payment_due || 0;
-			} else {
-				cardAmount += item.payment_due || 0;
-			}
-		});
-
-		return {
-			ItemsSold,
-			totalSales,
-			tips,
-			giftcardAmount,
-			cashAmount,
-			cardAmount,
-			discountAmount,
-			amountPaid,
-			cogs,
-			alcoholAmount,
-			foodAmount,
-			nonAlcoholicDrinksAmount,
-			otherAmountSold,
-		};
+		return JSON.parse(response.responseBody || "{}");
 	}
 
 	/**
-	 * Fetch raw transaction documents in a date range, newest first, for the
-	 * transactions/refund view. Unlike fetchSalesReport this returns every
-	 * status (pending, complete, cancelled, refunded) rather than an
-	 * aggregated "complete only" summary.
+	 * Fetch raw transaction documents from the last 24 hours, newest first,
+	 * for the transactions/refund view. Unlike fetchSalesReport this
+	 * returns every status (pending, complete, cancelled, refunded) rather
+	 * than an aggregated "complete only" summary.
 	 */
-	async function fetchTransactions(startDate, endDate) {
-		const queries = [Query.notEqual("testing", true)];
-		if (startDate) {
-			queries.push(Query.greaterThanEqual("$createdAt", new Date(startDate).toISOString()));
-		}
-		if (endDate) {
-			queries.push(Query.lessThanEqual("$createdAt", new Date(endDate).toISOString()));
-		}
-
-		const docs = await fetchAllDocuments(
-			databases,
-			config.databases.bar.id,
-			config.databases.bar.collections.transactions,
-			queries,
-		);
-
-		return docs.sort((a, b) => new Date(b.$createdAt) - new Date(a.$createdAt));
+	async function fetchTransactions() {
+		const response = await functions.createExecution({
+			functionId: TRANSACTIONS_LIST_FUNCTION_ID,
+			body: JSON.stringify({ test }),
+		});
+		const result = JSON.parse(response.responseBody || "{}");
+		return result.documents || [];
 	}
 
 	// Return all public methods and state
@@ -567,6 +434,8 @@ export function useAppwrite() {
 		refreshData,
 		settings: data,
 		login,
+		loginWithPin,
+		pinMode,
 		logout,
 		register,
 		uniqueId: ID.unique,
