@@ -10,10 +10,10 @@ const Item = ({ item, onAdd, disableItem, quantityInCart = 0 }) => {
 	const [disabled, setDisabled] = React.useState(false);
 
 	React.useEffect(() => {
-		if (item.shown === false) {
+		if (item.enabled_menu === false) {
 			setDisabled(true);
 		}
-	}, [item.shown]);
+	}, [item.enabled_menu]);
 	if (item && item.enabledPOS === false) return null;
 
 	const handlePointerDown = (e) => {

@@ -90,7 +90,7 @@ const POS = () => {
 					collectionId: config.databases.bar.collections.items,
 					documentId: itemId,
 					data: {
-						shown: true,
+						enabled_menu: true,
 					},
 				});
 			} else if (!toEnable) {
@@ -99,7 +99,7 @@ const POS = () => {
 					collectionId: config.databases.bar.collections.items,
 					documentId: itemId,
 					data: {
-						shown: false,
+						enabled_menu: false,
 					},
 				});
 			}
