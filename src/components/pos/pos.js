@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import Cart from "./cart";
 import { ProcessingModal, ErrorModal, CashPaymentModal, SuccessModal } from "../common/Modals/TransactionModals";
 import AlertNotification from "../common/Alert/Alert";
-import { Box, Chip, InputAdornment, Stack, TextField } from "@mui/material";
+import { Box, Chip, FormControlLabel, InputAdornment, Stack, Switch, TextField } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import { useAppwrite } from "../../utils/api";
 import SalesReport from "./salesReport";
@@ -34,6 +34,7 @@ const POS = () => {
 		refreshData,
 		uniqueId,
 		currentUser,
+		settings,
 	} = useAppwrite();
 
 	const {
@@ -112,6 +113,45 @@ const POS = () => {
 		},
 		[items],
 	);
+
+	const alcoholDisabled =
+		settings?.alcohol_disabled === true || settings?.alcohol_disabled === "true";
+
+	// Manual kill switch for the digital menu board's alcohol categories --
+	// hides them there regardless of the scheduled bar hours (never forces
+	// them to show outside those hours, only ever suppresses).
+	const toggleAlcoholDisabled = useCallback(async () => {
+		const next = !alcoholDisabled;
+		const payload = {
+			databaseId: config.databases.data.id,
+			collectionId: config.databases.data.collections.config,
+			documentId: "alcohol_disabled",
+			data: { key: "alcohol_disabled", value: next ? "true" : "false" },
+		};
+		try {
+			await databases.updateDocument(payload);
+		} catch (err) {
+			try {
+				await databases.createDocument(payload);
+			} catch (createErr) {
+				console.error("error saving alcohol_disabled setting", createErr);
+				setStripeAlert({
+					active: true,
+					message: "Failed to update alcohol menu setting",
+					type: "error",
+				});
+				return;
+			}
+		}
+		refreshData();
+		setStripeAlert({
+			active: true,
+			message: next
+				? "Alcohol menu hidden on the display"
+				: "Alcohol menu restored to its normal schedule",
+			type: "info",
+		});
+	}, [alcoholDisabled, databases, config, refreshData]);
 
 	const retryCheckout = () => {
 		setCheckoutError(false);
@@ -569,21 +609,33 @@ const POS = () => {
 						pb: 1,
 					}}
 				>
-					<TextField
-						value={searchQuery}
-						onChange={(e) => setSearchQuery(e.target.value)}
-						placeholder="Search items..."
-						size="small"
-						fullWidth
-						sx={{ mb: categoriesWithItems.length > 1 ? 1.5 : 0 }}
-						InputProps={{
-							startAdornment: (
-								<InputAdornment position="start">
-									<SearchIcon fontSize="small" />
-								</InputAdornment>
-							),
-						}}
-					/>
+					<Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: categoriesWithItems.length > 1 ? 1.5 : 0 }}>
+						<TextField
+							value={searchQuery}
+							onChange={(e) => setSearchQuery(e.target.value)}
+							placeholder="Search items..."
+							size="small"
+							fullWidth
+							InputProps={{
+								startAdornment: (
+									<InputAdornment position="start">
+										<SearchIcon fontSize="small" />
+									</InputAdornment>
+								),
+							}}
+						/>
+						<FormControlLabel
+							sx={{ flexShrink: 0, mr: 0 }}
+							control={
+								<Switch
+									checked={alcoholDisabled}
+									onChange={toggleAlcoholDisabled}
+									color="warning"
+								/>
+							}
+							label="Hide alcohol on menu"
+						/>
+					</Stack>
 					{categoriesWithItems.length > 1 && (
 						<Stack
 							direction="row"
