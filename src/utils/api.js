@@ -362,6 +362,13 @@ export function useAppwrite() {
 			],
 		);
 
+		// Look up categories by id (from live state) so sale-type
+		// classification below doesn't depend on hardcoded category IDs.
+		const categoriesById = {};
+		categories.forEach((c) => {
+			categoriesById[c.$id] = c;
+		});
+
 		// Cost-per-unit for each ingredient, used to cost pos_items via their
 		// `ingredients` array (an ingredient's $id repeated once per unit used,
 		// e.g. a double shot lists the spirit twice -- Appwrite arrays/relationships
@@ -442,20 +449,25 @@ export function useAppwrite() {
 				existingItem.quantity += quantity;
 				existingItem.revenue += itemCost * quantity;
 
-				// Categorize sales by type. Prefer the item's own `alcohol` flag
-				// (added 2026-02-09) over the hardcoded category IDs below; the ID
-				// fallback stays so transactions from before that flag existed are
-				// still classified correctly.
-				const isAlcohol =
-					cartItem.alcohol === true ||
-					cartItem.categories === "67ca019f002d6527c90b" ||
-					cartItem.categories === "67ca01900011bbccfe20";
+				// Categorize sales by type using the live categories collection
+				// (by name) rather than hardcoded category IDs, so this keeps
+				// working if a category is ever recreated with a new ID.
+				// cartItem.alcohol (added 2026-02-09) is checked first since
+				// it's cheapest and covers transactions whose category lookup
+				// misses for any reason.
+				const catId =
+					cartItem.categories && typeof cartItem.categories === "object"
+						? cartItem.categories.$id
+						: cartItem.categories;
+				const cat = categoriesById[catId];
+				const isAlcohol = cartItem.alcohol === true || cat?.alcohol === true;
+				const catName = cat?.name || "";
 
 				if (isAlcohol) {
 					alcoholAmount += itemCost * quantity;
-				} else if (cartItem.categories === "67ca01ac000c3b35244c") {
+				} else if (catName === "Food") {
 					foodAmount += itemCost * quantity;
-				} else if (cartItem.categories === "67ca01a60004cb37ca0c") {
+				} else if (catName.includes("Non-Alcoholic")) {
 					nonAlcoholicDrinksAmount += itemCost * quantity;
 				} else {
 					otherAmountSold += itemCost * quantity;
@@ -514,6 +526,31 @@ export function useAppwrite() {
 		};
 	}
 
+	/**
+	 * Fetch raw transaction documents in a date range, newest first, for the
+	 * transactions/refund view. Unlike fetchSalesReport this returns every
+	 * status (pending, complete, cancelled, refunded) rather than an
+	 * aggregated "complete only" summary.
+	 */
+	async function fetchTransactions(startDate, endDate) {
+		const queries = [Query.notEqual("testing", true)];
+		if (startDate) {
+			queries.push(Query.greaterThanEqual("$createdAt", new Date(startDate).toISOString()));
+		}
+		if (endDate) {
+			queries.push(Query.lessThanEqual("$createdAt", new Date(endDate).toISOString()));
+		}
+
+		const docs = await fetchAllDocuments(
+			databases,
+			config.databases.bar.id,
+			config.databases.bar.collections.transactions,
+			queries,
+		);
+
+		return docs.sort((a, b) => new Date(b.$createdAt) - new Date(a.$createdAt));
+	}
+
 	// Return all public methods and state
 	return {
 		client,
@@ -536,5 +573,6 @@ export function useAppwrite() {
 		generateStripeConnectionToken,
 		functions,
 		fetchSalesReport,
+		fetchTransactions,
 	};
 }

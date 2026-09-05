@@ -9,8 +9,9 @@ import {
 	DialogActions,
 	TextField,
 	Menu,
+	Switch,
 } from "@mui/material";
-import { FormControl, MenuItem } from "@mui/material";
+import { FormControl, FormControlLabel, MenuItem } from "@mui/material";
 import HamburgerMenuIcon from "@mui/icons-material/Menu";
 import { formatCAD } from "../../utils/format";
 import CartItem from "./cartItem";
@@ -40,6 +41,9 @@ const Cart = ({
 	transactionInProgress,
 	onManualUPCEntry,
 	setOpenSalesReport,
+	setOpenTransactions,
+	hideAlcohol,
+	onToggleHideAlcohol,
 }) => {
 	const [manualOpen, setManualOpen] = useState(false);
 	const [manualValue, setManualValue] = useState("");
@@ -120,6 +124,29 @@ const Cart = ({
 							</MenuItem>
 							<MenuItem onClick={() => setOpenSalesReport(true)}>
 								Sales Report
+							</MenuItem>
+							<MenuItem onClick={() => setOpenTransactions(true)}>
+								Transactions
+							</MenuItem>
+							<MenuItem
+								disableRipple
+								sx={{ "&:hover": { backgroundColor: "transparent" }, cursor: "default" }}
+							>
+								<FormControlLabel
+									sx={{ width: "100%", mr: 0 }}
+									onClick={(e) => e.stopPropagation()}
+									control={
+										<Switch
+											checked={!!hideAlcohol}
+											onChange={(e) =>
+												onToggleHideAlcohol &&
+												onToggleHideAlcohol(e.target.checked)
+											}
+											color="warning"
+										/>
+									}
+									label="Hide alcohol items"
+								/>
 							</MenuItem>
 						</Menu>
 						<Menu

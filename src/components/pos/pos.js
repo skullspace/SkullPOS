@@ -3,10 +3,11 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import Cart from "./cart";
 import { ProcessingModal, ErrorModal, CashPaymentModal, SuccessModal } from "../common/Modals/TransactionModals";
 import AlertNotification from "../common/Alert/Alert";
-import { Box, Chip, FormControlLabel, InputAdornment, Stack, Switch, TextField } from "@mui/material";
+import { Box, Chip, InputAdornment, Stack, TextField } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
 import { useAppwrite } from "../../utils/api";
 import SalesReport from "./salesReport";
+import TransactionsView from "./transactionsView";
 import Category from "./category";
 import { formatCAD } from "../../utils/format";
 import { useStripe } from "../../utils/stripe";
@@ -34,7 +35,8 @@ const POS = () => {
 		refreshData,
 		uniqueId,
 		currentUser,
-		settings,
+		functions,
+		fetchTransactions,
 	} = useAppwrite();
 
 	const {
@@ -67,6 +69,7 @@ const POS = () => {
 	const transactionId = useRef(null);
 	const [cashModalOpen, setCashModalOpen] = useState(false);
 	const [openSalesReport, setOpenSalesReport] = useState(false);
+	const [openTransactions, setOpenTransactions] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 
 	const localHandleCancelStripePayment = useCallback(() => {
@@ -114,44 +117,11 @@ const POS = () => {
 		[items],
 	);
 
-	const alcoholDisabled =
-		settings?.alcohol_disabled === true || settings?.alcohol_disabled === "true";
-
-	// Manual kill switch for the digital menu board's alcohol categories --
-	// hides them there regardless of the scheduled bar hours (never forces
-	// them to show outside those hours, only ever suppresses).
-	const toggleAlcoholDisabled = useCallback(async () => {
-		const next = !alcoholDisabled;
-		const payload = {
-			databaseId: config.databases.data.id,
-			collectionId: config.databases.data.collections.config,
-			documentId: "alcohol_disabled",
-			data: { key: "alcohol_disabled", value: next ? "true" : "false" },
-		};
-		try {
-			await databases.updateDocument(payload);
-		} catch (err) {
-			try {
-				await databases.createDocument(payload);
-			} catch (createErr) {
-				console.error("error saving alcohol_disabled setting", createErr);
-				setStripeAlert({
-					active: true,
-					message: "Failed to update alcohol menu setting",
-					type: "error",
-				});
-				return;
-			}
-		}
-		refreshData();
-		setStripeAlert({
-			active: true,
-			message: next
-				? "Alcohol menu hidden on the display"
-				: "Alcohol menu restored to its normal schedule",
-			type: "info",
-		});
-	}, [alcoholDisabled, databases, config, refreshData]);
+	// Local, staff-side convenience: hide alcohol items/categories from this
+	// POS's own selling grid (e.g. before bar service starts). Purely a view
+	// filter on this device -- does not touch the database or the customer
+	// menu display.
+	const [hideAlcohol, setHideAlcohol] = useState(false);
 
 	const retryCheckout = () => {
 		setCheckoutError(false);
@@ -570,16 +540,23 @@ const POS = () => {
 		return map;
 	}, [cart]);
 
+	// When hideAlcohol is on, drop alcohol categories (and everything in
+	// them) from this device's own selling grid entirely.
+	const displayCategories = useMemo(
+		() => (hideAlcohol ? categories.filter((c) => !c.alcohol) : categories),
+		[categories, hideAlcohol]
+	);
+
 	const categoriesWithItems = useMemo(
 		() =>
-			categories.filter((category) =>
+			displayCategories.filter((category) =>
 				filteredItems.some(
 					(item) =>
 						item.categories === category.$id &&
 						item.enabledPOS !== false
 				)
 			),
-		[categories, filteredItems]
+		[displayCategories, filteredItems]
 	);
 
 	const scrollToCategory = (categoryId) => {
@@ -609,33 +586,21 @@ const POS = () => {
 						pb: 1,
 					}}
 				>
-					<Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: categoriesWithItems.length > 1 ? 1.5 : 0 }}>
-						<TextField
-							value={searchQuery}
-							onChange={(e) => setSearchQuery(e.target.value)}
-							placeholder="Search items..."
-							size="small"
-							fullWidth
-							InputProps={{
-								startAdornment: (
-									<InputAdornment position="start">
-										<SearchIcon fontSize="small" />
-									</InputAdornment>
-								),
-							}}
-						/>
-						<FormControlLabel
-							sx={{ flexShrink: 0, mr: 0 }}
-							control={
-								<Switch
-									checked={alcoholDisabled}
-									onChange={toggleAlcoholDisabled}
-									color="warning"
-								/>
-							}
-							label="Hide alcohol on menu"
-						/>
-					</Stack>
+					<TextField
+						value={searchQuery}
+						onChange={(e) => setSearchQuery(e.target.value)}
+						placeholder="Search items..."
+						size="small"
+						fullWidth
+						sx={{ mb: categoriesWithItems.length > 1 ? 1.5 : 0 }}
+						InputProps={{
+							startAdornment: (
+								<InputAdornment position="start">
+									<SearchIcon fontSize="small" />
+								</InputAdornment>
+							),
+						}}
+					/>
 					{categoriesWithItems.length > 1 && (
 						<Stack
 							direction="row"
@@ -653,7 +618,7 @@ const POS = () => {
 						</Stack>
 					)}
 				</Box>
-				{categories.map((category) => (
+				{displayCategories.map((category) => (
 					<Category
 						key={category.$id}
 						category={category}
@@ -717,6 +682,9 @@ const POS = () => {
 					});
 				}}
 				setOpenSalesReport={setOpenSalesReport}
+				setOpenTransactions={setOpenTransactions}
+				hideAlcohol={hideAlcohol}
+				onToggleHideAlcohol={(checked) => setHideAlcohol(checked)}
 			/>
 			<ProcessingModal
 				isProcessing={transactionInProgress}
@@ -764,6 +732,15 @@ const POS = () => {
 				}
 			/>
 			<SalesReport open={openSalesReport} onClose={() => setOpenSalesReport(false)} />
+			<TransactionsView
+				open={openTransactions}
+				onClose={() => setOpenTransactions(false)}
+				databases={databases}
+				config={config}
+				functions={functions}
+				fetchTransactions={fetchTransactions}
+				setStripeAlert={setStripeAlert}
+			/>
 		</Box>
 	);
 };
