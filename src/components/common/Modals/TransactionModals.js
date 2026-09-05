@@ -75,11 +75,12 @@ const ErrorModal = ({
 	isOpen,
 	errorMessage,
 	isRetrying,
+	hideRetry,
 	onRetry,
 	onClose,
 }) => {
 	if (!isOpen) return null;
-	
+
 	return (
 		<Modal open aria-labelledby="checkout-error-title">
 			<Box sx={modalStyle}>
@@ -90,16 +91,21 @@ const ErrorModal = ({
 					{errorMessage}
 				</Typography>
 				<Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1, mt: 3 }}>
-					<Button
-						variant="contained"
-						onClick={onRetry}
-						disabled={isRetrying}
-						startIcon={
-							isRetrying ? <CircularProgress size={18} color="inherit" /> : null
-						}
-					>
-						Retry
-					</Button>
+					{/* Hidden rather than just disabled when a card may have
+					already been charged -- retrying here would re-charge it,
+					and disabled-but-visible still invites clicking it. */}
+					{!hideRetry && (
+						<Button
+							variant="contained"
+							onClick={onRetry}
+							disabled={isRetrying}
+							startIcon={
+								isRetrying ? <CircularProgress size={18} color="inherit" /> : null
+							}
+						>
+							Retry
+						</Button>
+					)}
 					<Button onClick={onClose}>Close</Button>
 				</Box>
 			</Box>

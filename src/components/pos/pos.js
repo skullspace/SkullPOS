@@ -65,6 +65,12 @@ const POS = () => {
 	const [cart, setCart] = useState([]);
 	const [checkoutSuccess, setCheckoutSuccess] = useState(false);
 	const [checkoutError, setCheckoutError] = useState("");
+	// True only when a card charge succeeded but recording it failed even
+	// after retries -- real money may have moved with nothing saved, so
+	// the ErrorModal's Retry (which would re-charge the card) is hidden and
+	// Close doesn't cancel the transaction (it might not actually be
+	// abandoned) -- see handleCardPayment.js.
+	const [cardChargeUnconfirmed, setCardChargeUnconfirmed] = useState(false);
 	const [paymentMethod, setPaymentMethod] = useState("stripe");
 	const [amountReceived, setAmountReceived] = useState(0);
 	const [changeDue, setChangeDue] = useState(0);
@@ -128,6 +134,13 @@ const POS = () => {
 		setCheckoutError(false);
 		if (!transactionId.current) {
 			setCheckoutError("No transaction available to retry");
+			return;
+		}
+
+		// A card that may have already been charged must never be
+		// re-charged blindly -- this shouldn't be reachable since the
+		// ErrorModal hides Retry in this state, but guard here too.
+		if (cardChargeUnconfirmed) {
 			return;
 		}
 
@@ -344,6 +357,7 @@ const POS = () => {
 				setTransactionInProgress,
 				setCheckoutError,
 				setCheckoutSuccess,
+				setCardChargeUnconfirmed,
 				clearCart,
 				setPaymentMethod,
 				formatCAD,
@@ -358,6 +372,7 @@ const POS = () => {
 			setTransactionInProgress,
 			setCheckoutError,
 			setCheckoutSuccess,
+			setCardChargeUnconfirmed,
 			clearCart,
 			setPaymentMethod,
 			formatCAD,
@@ -668,9 +683,17 @@ const POS = () => {
 				isOpen={!!checkoutError && !transactionInProgress}
 				errorMessage={checkoutError}
 				isRetrying={transactionInProgress}
+				hideRetry={cardChargeUnconfirmed}
 				onRetry={retryCheckout}
 				onClose={() => {
-					localHandleCancelStripePayment();
+					// A possibly-already-charged transaction isn't necessarily
+					// abandoned -- don't mark it cancelled, just close the
+					// dialog and let staff find it (still "pending") in the
+					// Transactions view to reconcile manually.
+					if (!cardChargeUnconfirmed) {
+						localHandleCancelStripePayment();
+					}
+					setCardChargeUnconfirmed(false);
 					setCheckoutError(false);
 				}}
 			/>

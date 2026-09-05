@@ -11,7 +11,7 @@
  * allowing flexible testing and configuration.
  */
 
-import { recordPayment } from "./splitPayment";
+import { recordPaymentWithRetry, describeUnknownPaymentFailure } from "./splitPayment";
 
 /**
  * Factory function to create card payment handler
@@ -24,6 +24,7 @@ import { recordPayment } from "./splitPayment";
  * @param {Function} deps.setTransactionInProgress - Update transaction state
  * @param {Function} deps.setCheckoutError - Set checkout error message
  * @param {Function} deps.setCheckoutSuccess - Set checkout success state
+ * @param {Function} deps.setCardChargeUnconfirmed - Flags that a charge succeeded but wasn't confirmed saved (blocks the ErrorModal's Retry, which would re-charge)
  * @param {Function} deps.clearCart - Clear shopping cart
  * @param {Function} deps.setPaymentMethod - Reset payment method
  * @param {Function} deps.formatCAD - Format currency function
@@ -40,6 +41,7 @@ export default function createHandleCardPayment(deps) {
 		setTransactionInProgress,
 		setCheckoutError,
 		setCheckoutSuccess,
+		setCardChargeUnconfirmed,
 		clearCart,
 		setPaymentMethod,
 		formatCAD,
@@ -78,14 +80,23 @@ export default function createHandleCardPayment(deps) {
 		const total =
 			amountToCharge != null ? amountToCharge : getTotal ? getTotal() : 0;
 
+		// Cleared at the start of every attempt -- only set again below if
+		// *this* attempt's charge succeeds but recording it doesn't.
+		setCardChargeUnconfirmed && setCardChargeUnconfirmed(false);
+
 		try {
 			// Call Stripe Terminal to charge card
 			const result = await chargeCard(total, retrying);
 
 			// Record the payment server-side -- verified independently against
 			// the real Stripe API there, not trusted from this client response.
+			// Retries on a transport failure (safe -- Transaction-RecordPayment
+			// rejects a leg that's already been applied), but if it still
+			// fails, the card was charged for real: don't claim success, and
+			// don't let staff blindly retry (which would re-charge it).
+			let recordError = null;
 			try {
-				const recordResult = await recordPayment({
+				const recordResult = await recordPaymentWithRetry({
 					functions,
 					transactionId,
 					method: "stripe",
@@ -93,10 +104,24 @@ export default function createHandleCardPayment(deps) {
 					paymentIntentId: result.id,
 				});
 				if (!recordResult.ok) {
-					console.error("Failed to record card payment:", recordResult.error);
+					recordError = new Error(recordResult.error || "Failed to record payment");
 				}
-			} catch (dbErr) {
-				console.error("Failed to record card payment:", dbErr);
+			} catch (err) {
+				recordError = err;
+			}
+
+			if (recordError) {
+				console.error("Failed to record card payment:", recordError);
+				setTransactionInProgress && setTransactionInProgress(false);
+				setCardChargeUnconfirmed && setCardChargeUnconfirmed(true);
+				setCheckoutError &&
+					setCheckoutError(
+						recordError.name === "RecordPaymentUnknownError"
+							? describeUnknownPaymentFailure(recordError)
+							: `Card was charged ${formatCAD(total)} but failed to save: ${recordError.message}. ` +
+								`Do not charge again -- check the Transactions view (payment ${result.id}).`,
+					);
+				return;
 			}
 
 			// Show success message with payment details

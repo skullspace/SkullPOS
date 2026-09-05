@@ -23,6 +23,79 @@ export async function recordPayment({ functions, transactionId, method, amount, 
 }
 
 /**
+ * Thrown by recordPaymentWithRetry only when every attempt failed to even
+ * reach the server (not a clean rejection) -- server-side state is
+ * genuinely unknown. For a stripe/giftcard leg this means real money or
+ * giftcard balance may have already moved with no confirmed record of it
+ * on this transaction, which callers should tell staff explicitly rather
+ * than showing a generic error (or worse, a false "success").
+ */
+export class RecordPaymentUnknownError extends Error {
+	constructor(message, { method, amount, paymentIntentId, giftcardId } = {}) {
+		super(message);
+		this.name = "RecordPaymentUnknownError";
+		this.method = method;
+		this.amount = amount;
+		this.paymentIntentId = paymentIntentId;
+		this.giftcardId = giftcardId;
+	}
+}
+
+/**
+ * recordPayment, retrying on transport failures (network drop, timeout,
+ * function cold-start) -- safe to retry because Transaction-RecordPayment
+ * re-reads the transaction fresh on every call and rejects once it's no
+ * longer "pending" or a leg would exceed the remaining balance, so
+ * retrying after an already-successful-but-unacknowledged attempt is a
+ * clean no-op rather than a double-application. Does NOT retry a clean
+ * `{ok:false}` response -- a real validation failure (bad amount, card
+ * declined verification, giftcard not found) won't fix itself.
+ *
+ * If every attempt throws, throws RecordPaymentUnknownError instead of
+ * the raw transport error, carrying the leg's details (paymentIntentId
+ * especially) so the caller can surface something a staff member can
+ * actually act on.
+ */
+export async function recordPaymentWithRetry(params, { attempts = 3, delayMs = 700 } = {}) {
+	let lastError;
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		try {
+			return await recordPayment(params);
+		} catch (err) {
+			lastError = err;
+			if (attempt < attempts) {
+				await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+			}
+		}
+	}
+	throw new RecordPaymentUnknownError(lastError?.message || "Failed to reach the server", params);
+}
+
+/**
+ * A human-readable, actionable message for when recordPaymentWithRetry's
+ * attempts were all exhausted -- tailored per method, since what staff
+ * should do next differs (a card leg means real money may have moved; a
+ * giftcard leg means its balance may have already been debited; cash has
+ * no external side effect to worry about).
+ */
+export function describeUnknownPaymentFailure(err) {
+	if (err?.method === "stripe") {
+		return (
+			`Card may have been charged $${((err.amount || 0) / 100).toFixed(2)} but we couldn't confirm it was ` +
+			`saved -- do NOT charge this card again. Check Stripe for payment ${err.paymentIntentId || "(unknown)"} ` +
+			`and reconcile manually if it succeeded.`
+		);
+	}
+	if (err?.method === "giftcard") {
+		return (
+			`Giftcard balance may have already been reduced by $${((err.amount || 0) / 100).toFixed(2)} but we ` +
+			`couldn't confirm it was saved -- check the giftcard's balance before applying it again.`
+		);
+	}
+	return err?.message || "Failed to record payment -- please check the transaction before retrying.";
+}
+
+/**
  * Returns the list of payment legs for a transaction, for display (the
  * refund confirmation dialog, the sales report). New transactions carry
  * this directly in `payments`; older ones predate that and have only the

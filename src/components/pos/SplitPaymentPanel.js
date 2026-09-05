@@ -15,7 +15,7 @@ import MoneyIcon from "@mui/icons-material/AttachMoney";
 import CreditCardIcon from "@mui/icons-material/CreditCard";
 import CardGiftcardIcon from "@mui/icons-material/CardGiftcard";
 import { formatCAD } from "../../utils/format";
-import { recordPayment, PAYMENT_METHOD_LABELS } from "../../utils/splitPayment";
+import { recordPaymentWithRetry, describeUnknownPaymentFailure, PAYMENT_METHOD_LABELS } from "../../utils/splitPayment";
 import { findGiftcardByUPC } from "../../utils/giftcard";
 
 const centsFromInput = (value) => Math.round(parseFloat(value || "0") * 100);
@@ -55,7 +55,12 @@ const SplitPaymentPanel = ({
 		setBusy(true);
 		setError("");
 		try {
-			const result = await recordPayment({ functions, transactionId, method, amount, giftcardId, paymentIntentId });
+			// Retries on a transport failure (network drop, timeout) -- safe
+			// because Transaction-RecordPayment rejects a leg that's already
+			// been applied (transaction no longer pending / would exceed the
+			// remaining balance), so this can't double-apply a leg that
+			// actually succeeded server-side on an earlier attempt.
+			const result = await recordPaymentWithRetry({ functions, transactionId, method, amount, giftcardId, paymentIntentId });
 			if (!result.ok) throw new Error(result.error || "Failed to record payment");
 
 			setLegs((prev) => [...prev, { method, amount }]);
@@ -67,7 +72,11 @@ const SplitPaymentPanel = ({
 			}
 		} catch (err) {
 			console.error("Split payment leg failed", err);
-			setError(err.message || "Failed to record payment");
+			// RecordPaymentUnknownError means every retry failed to even reach
+			// the server -- for a card/giftcard leg, money or balance may have
+			// already moved with nothing recorded, so say so explicitly rather
+			// than a generic error that invites a blind retry (double-charge).
+			setError(err.name === "RecordPaymentUnknownError" ? describeUnknownPaymentFailure(err) : err.message || "Failed to record payment");
 		} finally {
 			setBusy(false);
 		}
