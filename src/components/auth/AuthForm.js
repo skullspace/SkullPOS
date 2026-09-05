@@ -1,7 +1,7 @@
 /**
  * AuthForm.js - Reusable authentication form component
  * 
- * Shared form for login and register flows with:
+ * Used by the login form (there's no self-registration flow) with:
  * - Customizable form fields
  * - Error handling and display
  * - Submit handling
@@ -20,7 +20,7 @@ import {
 } from "@mui/material";
 
 /**
- * AuthForm component - reusable for login and register
+ * AuthForm component - the login form's field/error/submit chrome
  * 
  * @param {Object} props - Component props
  * @param {string} props.title - Form title
@@ -100,7 +100,7 @@ const AuthForm = ({
 						{submitButtonLabel}
 					</Button>
 
-					{/* Secondary actions (e.g., "Register" from login) */}
+					{/* Secondary actions (e.g., "Quick Access PIN") */}
 					{secondaryActions.map((action, index) => (
 						<Button
 							key={index}

@@ -2,14 +2,16 @@
  * App.js - Main application component for SkullPOS
  *
  * SkullPOS is a Point of Sale system designed for Skull Space with features including:
- * - User authentication (login/register)
+ * - User authentication (email/password login, quick-access PIN)
  * - Product catalog with categories
  * - Shopping cart with member discounts
  * - Multi-method payment processing (Stripe, Cash, Gift Cards)
  * - Barcode scanning support
  * - Sales reporting and analytics
  *
- * This component handles routing and the two auth guards below.
+ * This component handles routing and the two auth guards below. There is
+ * no self-registration route -- staff accounts are created by an admin
+ * directly in the Appwrite console and added to a team.
  */
 
 import { useAppwrite } from "./utils/api";
@@ -18,7 +20,6 @@ import { BrowserRouter as Router, Navigate, Route, Routes, useNavigate } from "r
 
 // Component imports
 import Login from "./components/login";
-import Register from "./components/register";
 import POS from "./components/pos/pos";
 
 /**
@@ -69,8 +70,8 @@ function RequireAuth({ children }) {
 }
 
 /**
- * Gate for /login and /register. Sends an already-logged-in visitor
- * straight to /pos instead of showing them the auth form again.
+ * Gate for /login. Sends an already-logged-in visitor straight to /pos
+ * instead of showing them the auth form again.
  */
 function RedirectIfAuthed({ children }) {
 	const { account, pinMode } = useAppwrite();
@@ -113,14 +114,6 @@ export default function App() {
 					}
 				/>
 				<Route
-					path="/register"
-					element={
-						<RedirectIfAuthed>
-							<Register />
-						</RedirectIfAuthed>
-					}
-				/>
-				<Route
 					path="/pos"
 					element={
 						<RequireAuth>
@@ -128,6 +121,9 @@ export default function App() {
 						</RequireAuth>
 					}
 				/>
+				{/* Catches a stale /register bookmark too, now that
+				self-registration has been removed. */}
+				<Route path="*" element={<Navigate to="/login" replace />} />
 			</Routes>
 		</Router>
 	);

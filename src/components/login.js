@@ -5,7 +5,7 @@
  * Features:
  * - Email/password input validation
  * - Error handling and display
- * - Navigation to registration page for new users
+ * - Quick-access PIN entry for a restricted cashier session
  * - Automatic redirect to POS after successful login
  */
 
@@ -63,25 +63,18 @@ const Login = () => {
 		}
 	};
 
-	/**
-	 * Navigate to registration page for new users
-	 */
-	const handleNavigateToRegister = () => {
-		navigate("/register");
-	};
-
 	// Form field configuration
 	const loginFields = [
 		{ name: "email", label: "Email", type: "email" },
 		{ name: "password", label: "Password", type: "password" },
 	];
 
-	// Secondary actions
+	// Secondary actions -- self-registration was removed: it only checked
+	// that the email string ended in "@skullspace.ca" (no real verification
+	// of ownership), so it was effectively as open as anonymous access.
+	// Staff accounts are created by an admin directly in the Appwrite
+	// console and added to a team; everyone else uses the PIN below.
 	const secondaryActions = [
-		{
-			label: "Register",
-			onClick: handleNavigateToRegister,
-		},
 		{
 			label: "Quick Access PIN",
 			onClick: () => setPinDialogOpen(true),

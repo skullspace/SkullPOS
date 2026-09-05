@@ -3,7 +3,7 @@
  * 
  * This module provides:
  * - Appwrite client initialization and configuration
- * - User authentication (login, register, logout)
+ * - User authentication (login, logout, quick-access PIN)
  * - Database operations for categories, items, and transactions
  * - Sales report generation and analytics
  * - Stripe connection token generation for payment processing
@@ -108,7 +108,7 @@ function createClient() {
  * useAppwrite Hook - Main hook for Appwrite functionality
  * 
  * Provides:
- * - Authentication methods (login, register, logout)
+ * - Authentication methods (login, logout, quick-access PIN)
  * - Database operations (CRUD for items, categories)
  * - Data fetching and caching
  * - Stripe token generation
@@ -253,11 +253,8 @@ export function useAppwrite() {
 			} catch (err) {
 				setCurrentUser(null);
 				try {
-					// Redirect to login if not on authentication pages
-					if (
-						!window.location.pathname.startsWith("/login") &&
-						!window.location.pathname.startsWith("/register")
-					) {
+					// Redirect to login if not on the login page itself
+					if (!window.location.pathname.startsWith("/login")) {
 						console.log("no active session");
 						window.location.href = "/login";
 					}
@@ -341,32 +338,6 @@ export function useAppwrite() {
 	}
 
 	/**
-	 * Register new user account
-	 * Email must be @skullspace.ca domain
-	 * 
-	 * @param {Object} data - Registration data
-	 * @param {string} data.name - User's full name
-	 * @param {string} data.email - User email (@skullspace.ca required)
-	 * @param {string} data.password - User password
-	 * @returns {Promise<Object>} Created account object
-	 * @throws {Error} If email domain is invalid or user already exists
-	 */
-	async function register(data) {
-		const { name, email, password } = data;
-		if (!email.endsWith("@skullspace.ca")) {
-			throw new Error("Invalid email domain");
-		}
-		try {
-			await account.get();
-			throw new Error("Already logged in");
-		} catch (err) {
-			// Not logged in, continue
-		}
-		let id = ID.unique();
-		return await account.create(id, email, password, name);
-	}
-
-	/**
 	 * Generate sales report for a date range
 	 * Analyzes completed transactions and generates analytics
 	 * 
@@ -437,7 +408,6 @@ export function useAppwrite() {
 		loginWithPin,
 		pinMode,
 		logout,
-		register,
 		uniqueId: ID.unique,
 		generateStripeConnectionToken,
 		functions,
