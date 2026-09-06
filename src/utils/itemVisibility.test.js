@@ -15,6 +15,19 @@ describe("setItemEnabled", () => {
 		});
 	});
 
+	test("passes a field through when given", async () => {
+		const functions = {
+			createExecution: jest.fn().mockResolvedValue({ responseBody: JSON.stringify({ ok: true, enabled: true }) }),
+		};
+
+		await setItemEnabled({ functions, itemId: "item1", enabled: true, field: "enabled_pos" });
+
+		expect(functions.createExecution).toHaveBeenCalledWith({
+			functionId: "6a9c6aad6d4a29ab66ee",
+			body: JSON.stringify({ itemId: "item1", enabled: true, field: "enabled_pos" }),
+		});
+	});
+
 	test("surfaces a server-reported error", async () => {
 		const functions = {
 			createExecution: jest.fn().mockResolvedValue({ responseBody: JSON.stringify({ ok: false, error: "not found" }) }),
