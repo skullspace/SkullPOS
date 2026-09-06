@@ -17,6 +17,7 @@ import {
 	TextField,
 	Typography,
 } from "@mui/material";
+import { parseDollarsToCents, suggestQuickTenders } from "../../../utils/cashTender";
 
 const modalStyle = {
 	position: "absolute",
@@ -115,6 +116,12 @@ const ErrorModal = ({
 
 /**
  * Cash Payment Modal - collects cash amount from user
+ *
+ * `total` (cents) and `formatCAD` drive two things beyond the plain amount
+ * field: quick-tender buttons (the exact total, plus whichever common
+ * bills are large enough to cover it) so the common case doesn't require
+ * typing, and a live change-due preview instead of only finding out the
+ * change amount after submitting.
  */
 const CashPaymentModal = ({
 	isOpen,
@@ -123,9 +130,15 @@ const CashPaymentModal = ({
 	onSubmit,
 	onClose,
 	isProcessing,
+	total = 0,
+	formatCAD,
 }) => {
 	if (!isOpen) return null;
-	
+
+	const amountCents = parseDollarsToCents(amountPaid);
+	const changeCents = amountCents - total;
+	const quickTenders = suggestQuickTenders(total);
+
 	return (
 		<Modal
 			open={isOpen}
@@ -141,6 +154,21 @@ const CashPaymentModal = ({
 					Enter amount received
 				</Typography>
 
+				{formatCAD && (
+					<Box sx={{ display: "flex", gap: 1, mt: 1.5, flexWrap: "wrap" }}>
+						{quickTenders.map((cents, i) => (
+							<Button
+								key={cents}
+								size="small"
+								variant="outlined"
+								onClick={() => onAmountChange(String(cents / 100))}
+							>
+								{i === 0 ? `Exact (${formatCAD(cents)})` : formatCAD(cents)}
+							</Button>
+						))}
+					</Box>
+				)}
+
 				<TextField
 					autoFocus
 					margin="normal"
@@ -151,6 +179,14 @@ const CashPaymentModal = ({
 					fullWidth
 					inputProps={{ min: 0, step: "0.01" }}
 				/>
+
+				{formatCAD && amountPaid !== "" && amountPaid !== 0 && (
+					<Typography sx={{ color: changeCents >= 0 ? "success.main" : "error.main" }}>
+						{changeCents >= 0
+							? `Change due: ${formatCAD(changeCents)}`
+							: `Still needed: ${formatCAD(-changeCents)}`}
+					</Typography>
+				)}
 
 				<Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1, mt: 2 }}>
 					<Button onClick={onClose}>Cancel</Button>

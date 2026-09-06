@@ -20,9 +20,10 @@ import {
 	clearCartState as clearCartStateUtil,
 } from "../../utils/cartUtils";
 import { findGiftcardByUPC } from "../../utils/giftcard";
-import { recordPayment } from "../../utils/splitPayment";
+import { recordPayment, recordPaymentWithRetry, describeUnknownPaymentFailure } from "../../utils/splitPayment";
 import { setTransactionStatus } from "../../utils/transactionStatus";
 import { setItemEnabled } from "../../utils/itemVisibility";
+import { parseDollarsToCents } from "../../utils/cashTender";
 
 
 const POS = () => {
@@ -430,28 +431,51 @@ const POS = () => {
 		],
 	);
 
-	function handleCashPayment() {
-		setTransactionInProgress(false);
-		setCashModalOpen(false);
-		// calculate change due
-		const amountReceivedCents = Math.round(amountReceived * 100);
+	async function handleCashPayment() {
+		const amountReceivedCents = parseDollarsToCents(amountReceived);
 		if (amountReceivedCents < total) {
 			setCheckoutError("Amount received is less than total");
 			return;
 		}
 		const change = amountReceivedCents - total;
-		setChangeDue(change);
+
+		// Close the modal and mark in-progress BEFORE the async call (not
+		// after) -- both close the window for a double-submit, and neither
+		// success nor the cleared cart is shown until the record is actually
+		// confirmed. A cash sale that silently failed to save here would
+		// still say "Checkout Successful" to the cashier while sitting
+		// `pending` forever -- invisible to Sales Report, which only counts
+		// `complete` transactions.
+		setCashModalOpen(false);
+		setTransactionInProgress(true);
 		setCheckoutError("");
-		setCheckoutSuccess(true);
-		clearCart();
-		setPaymentMethod("stripe");
-		setAmountReceived(0);
-		recordPayment({
-			functions,
-			transactionId: transactionId.current,
-			method: "cash",
-			amount: total,
-		}).catch((err) => console.error("Failed to record cash payment", err));
+
+		try {
+			// Retries on a transport failure -- safe for cash specifically
+			// (unlike a card leg, there's no external side effect a retry
+			// could double up on; Transaction-RecordPayment's own idempotency
+			// guard rejects a leg once the transaction is no longer pending).
+			const result = await recordPaymentWithRetry({
+				functions,
+				transactionId: transactionId.current,
+				method: "cash",
+				amount: total,
+			});
+			if (!result.ok) {
+				throw new Error(result.error || "Failed to record cash payment");
+			}
+
+			setChangeDue(change);
+			setCheckoutSuccess(true);
+			clearCart();
+			setPaymentMethod("stripe");
+			setAmountReceived(0);
+		} catch (err) {
+			console.error("Failed to record cash payment", err);
+			setCheckoutError(err.name === "RecordPaymentUnknownError" ? describeUnknownPaymentFailure(err) : err.message);
+		} finally {
+			setTransactionInProgress(false);
+		}
 	}
 
 	useEffect(() => {
@@ -704,6 +728,8 @@ const POS = () => {
 				onSubmit={handleCashPayment}
 				onClose={() => setCashModalOpen(false)}
 				isProcessing={transactionInProgress}
+				total={total}
+				formatCAD={formatCAD}
 			/>
 			<SuccessModal
 				isOpen={checkoutSuccess && !transactionInProgress && !checkoutError && !cashModalOpen}
