@@ -15,6 +15,7 @@ export default function createCheckout(deps) {
 		getTotal,
 		getDiscount,
 		getCreatedBy,
+		getChannel,
 		getPaymentMethod,
 		getGiftcard,
 		setGiftcard,
@@ -53,6 +54,12 @@ export default function createCheckout(deps) {
 			testing: test,
 			total: getTotal ? getTotal() : 0,
 			CreatedBy: getCreatedBy ? getCreatedBy() : null,
+			// "pos" (regular staff register) or "self_checkout" (customer
+			// kiosk) -- defaults to "pos" so every existing caller of this
+			// factory needs no changes. Lets Sales-Report compare the two, and
+			// lets Transaction-RecordPayment refuse a non-card leg on a
+			// self-checkout sale server-side.
+			channel: getChannel ? getChannel() : "pos",
 		};
 
 		try {

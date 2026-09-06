@@ -19,8 +19,12 @@
  * @param {Function} deps.addItemToCart - Function to add item to cart
  * @param {Function} deps.setStripeAlert - Function to show user alerts
  * @param {Function} deps.handleGiftcard - Function to process giftcard codes
+ * @param {boolean} [deps.autoAddOnScan=false] - When true, a matched UPC is
+ *   added to the cart immediately (self-checkout); when false/omitted, a
+ *   scan only shows the "Scanned: X" alert and a manual click is still
+ *   required (staff POS, to avoid a mis-scan silently adding the wrong item)
  * @returns {Function} Barcode processor function
- * 
+ *
  * @example
  * const processBarcode = createProcessBarcode({
  *   getItems: () => items,
@@ -36,6 +40,7 @@ export default function createProcessBarcode({
 	addItemToCart,
 	setStripeAlert,
 	handleGiftcard,
+	autoAddOnScan = false,
 }) {
 	/**
 	 * Process a barcode and take appropriate action
@@ -83,9 +88,13 @@ export default function createProcessBarcode({
 		});
 
 		if (found) {
-			// Item found - show success message
-			// Note: Item is not auto-added (line 45 is commented out)
-			// Manual button click is required to add to cart
+			// Item found - show success message. Manual button click is still
+			// required to add to cart for the staff POS (avoids a mis-scan
+			// silently adding the wrong item) -- self-checkout passes
+			// autoAddOnScan:true so a customer's scan alone adds it.
+			if (autoAddOnScan && typeof addItemToCart === "function") {
+				addItemToCart(found.$id);
+			}
 			if (typeof setStripeAlert === "function") {
 				setStripeAlert({
 					active: true,

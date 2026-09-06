@@ -52,10 +52,13 @@ const PinEntryDialog = ({ open, onClose }) => {
 		setSubmitting(true);
 
 		loginWithPin(pin)
-			.then(() => {
+			.then((result) => {
 				if (cancelled) return;
 				handleClose();
-				navigate("/pos", { replace: true });
+				// A kiosk PIN goes to the customer-facing self-checkout screen,
+				// never the staff POS -- this is the one branch keeping the two
+				// entirely separate.
+				navigate(result.selfCheckout ? "/self-checkout" : "/pos", { replace: true });
 			})
 			.catch((err) => {
 				if (cancelled) return;

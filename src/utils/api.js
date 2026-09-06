@@ -292,31 +292,37 @@ export function useAppwrite() {
 	);
 
 	/**
-	 * Quick-access PIN login. Verifies the PIN via the Verify-Pin function,
-	 * then (if it doesn't already have one) creates an anonymous session so
-	 * the device has "users"-level permission to create transactions.
-	 * Restricted-mode gating (no refunds, sales reports capped to 24 hours)
-	 * lives wherever `pinMode` is read, not here.
+	 * Quick-access PIN login. Ensures an anonymous session exists first (so
+	 * the device has "users"-level permission to create transactions), THEN
+	 * verifies the PIN via the Verify-Pin function -- in that order, because
+	 * Verify-Pin reads the caller's user id off the request to grant it
+	 * membership in the payment-access team on a match (see its README),
+	 * which only works if the session already exists by the time it's
+	 * called. Restricted-mode gating (no refunds, sales reports capped to
+	 * 24 hours; or, for a self-checkout kiosk PIN, no refunds/history/
+	 * reporting at all) lives wherever `pinMode` is read, not here -- the
+	 * caller (see PinEntryDialog.js) is what actually routes to /pos vs
+	 * /self-checkout based on `result.selfCheckout`.
 	 *
 	 * @param {string} pin
-	 * @returns {Promise<{ok: boolean, label?: string}>}
+	 * @returns {Promise<{ok: boolean, label?: string, selfCheckout?: boolean}>}
 	 * @throws {Error} If the PIN doesn't match
 	 */
 	const loginWithPin = useCallback(
 		async (pin) => {
-			const result = await verifyPin({ functions, pin });
-			if (!result.ok) {
-				throw new Error("Incorrect PIN");
-			}
-
 			try {
 				await account.get();
 			} catch (err) {
 				await account.createAnonymousSession();
 			}
 
-			setPinMode(result.label);
-			setPinModeState({ label: result.label || null });
+			const result = await verifyPin({ functions, pin });
+			if (!result.ok) {
+				throw new Error("Incorrect PIN");
+			}
+
+			setPinMode(result.label, result.selfCheckout);
+			setPinModeState({ label: result.label || null, selfCheckout: !!result.selfCheckout });
 			return result;
 		},
 		[functions, account],
@@ -362,13 +368,14 @@ export function useAppwrite() {
 	const SALES_REPORT_FUNCTION_ID = "6a9c687535280f239b5f";
 	const TRANSACTIONS_LIST_FUNCTION_ID = "6a9c687ec05e99a6f1a8";
 
-	async function fetchSalesReport(startDate, endDate) {
+	async function fetchSalesReport(startDate, endDate, channel) {
 		const response = await functions.createExecution({
 			functionId: SALES_REPORT_FUNCTION_ID,
 			body: JSON.stringify({
 				startDate: startDate ? new Date(startDate).toISOString() : null,
 				endDate: new Date(endDate).toISOString(),
 				test,
+				channel,
 			}),
 		});
 		return JSON.parse(response.responseBody || "{}");

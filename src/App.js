@@ -21,11 +21,17 @@ import { BrowserRouter as Router, Navigate, Route, Routes, useNavigate } from "r
 // Component imports
 import Login from "./components/login";
 import POS from "./components/pos/pos";
+import SelfCheckout from "./components/selfCheckout/selfCheckout";
 
 /**
  * Gate for the /pos route. Renders nothing until the session check
  * resolves -- an unauthenticated visitor should never see even a flash of
  * the POS screen -- then either renders children or redirects to /login.
+ *
+ * A self-checkout kiosk PIN does NOT satisfy this guard (defense in
+ * depth) -- bookmarking/typing /pos from a kiosk session must not open
+ * the full staff screen, even though nothing in the kiosk UI itself links
+ * there.
  */
 function RequireAuth({ children }) {
 	const { account, logout, pinMode } = useAppwrite();
@@ -47,9 +53,15 @@ function RequireAuth({ children }) {
 
 				// An anonymous session is only valid here if it was created
 				// through the quick-access PIN flow (loginWithPin sets this
-				// flag right before creating the session).
-				if (acct && pinMode) {
+				// flag right before creating the session) AND isn't a
+				// self-checkout kiosk PIN (those belong on /self-checkout).
+				if (acct && pinMode && !pinMode.selfCheckout) {
 					setReady(true);
+					return;
+				}
+
+				if (acct && pinMode && pinMode.selfCheckout) {
+					navigate("/self-checkout", { replace: true });
 					return;
 				}
 
@@ -70,8 +82,56 @@ function RequireAuth({ children }) {
 }
 
 /**
+ * Gate for the /self-checkout route. Only a PIN verified as
+ * selfCheckout:true satisfies this -- a staff email/password session does
+ * NOT (a manager's real login opening the customer-facing kiosk screen
+ * would be its own kind of mistake), and neither does an ordinary cashier
+ * PIN.
+ */
+function RequireSelfCheckoutAuth({ children }) {
+	const { account, logout, pinMode } = useAppwrite();
+	const navigate = useNavigate();
+	const [ready, setReady] = useState(false);
+
+	useEffect(() => {
+		let cancelled = false;
+
+		account
+			.get()
+			.then((acct) => {
+				if (cancelled) return;
+
+				if (acct && pinMode && pinMode.selfCheckout) {
+					setReady(true);
+					return;
+				}
+
+				if (acct && (acct.email || pinMode)) {
+					// A staff or ordinary-cashier session exists, just not one
+					// that belongs on this route -- send it to /pos instead of
+					// logging it out.
+					navigate("/pos", { replace: true });
+					return;
+				}
+
+				logout();
+			})
+			.catch(() => {
+				if (!cancelled) navigate("/login", { replace: true });
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [account, logout, navigate, pinMode]);
+
+	return ready ? children : null;
+}
+
+/**
  * Gate for /login. Sends an already-logged-in visitor straight to /pos
- * instead of showing them the auth form again.
+ * (or /self-checkout, for a kiosk PIN) instead of showing them the auth
+ * form again.
  */
 function RedirectIfAuthed({ children }) {
 	const { account, pinMode } = useAppwrite();
@@ -83,7 +143,14 @@ function RedirectIfAuthed({ children }) {
 		account
 			.get()
 			.then((acct) => {
-				if (!cancelled && acct && (acct.email || pinMode)) {
+				if (cancelled || !acct) return;
+
+				if (pinMode && pinMode.selfCheckout) {
+					navigate("/self-checkout", { replace: true });
+					return;
+				}
+
+				if (acct.email || pinMode) {
 					navigate("/pos", { replace: true });
 				}
 			})
@@ -119,6 +186,14 @@ export default function App() {
 						<RequireAuth>
 							<POS />
 						</RequireAuth>
+					}
+				/>
+				<Route
+					path="/self-checkout"
+					element={
+						<RequireSelfCheckoutAuth>
+							<SelfCheckout />
+						</RequireSelfCheckoutAuth>
 					}
 				/>
 				{/* Catches a stale /register bookmark too, now that

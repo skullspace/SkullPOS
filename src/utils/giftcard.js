@@ -7,7 +7,7 @@
  * and balance in the system, or set one directly. Lookup and balance
  * changes go through Appwrite Functions instead:
  *   - Giftcard-Lookup: find one card by its exact code
- *   - Transaction-ApplyGiftcard: apply a giftcard payment (used by checkout.js)
+ *   - Transaction-RecordPayment: apply a giftcard payment leg (used by checkout.js)
  *   - Stripe-RefundPayment: credits a giftcard back on refund
  */
 

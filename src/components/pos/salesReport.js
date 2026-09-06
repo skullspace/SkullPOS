@@ -16,6 +16,8 @@ import {
 	Paper,
 	TextField,
 	Button,
+	ToggleButton,
+	ToggleButtonGroup,
 } from "@mui/material";
 import { formatCAD } from "../../utils/format";
 
@@ -85,6 +87,10 @@ const SalesReport = ({ open, onClose, restricted }) => {
 	const [order, setOrder] = React.useState("desc");
 	const [startDate, setStartDate] = React.useState("");
 	const [endDate, setEndDate] = React.useState("");
+	// "all" | "pos" | "self_checkout" -- lets staff compare self-checkout
+	// kiosk sales against regular POS sales instead of only seeing them
+	// combined.
+	const [channelFilter, setChannelFilter] = React.useState("all");
 
 	// A pin-mode cashier session can't look further back than 24 hours --
 	// fetchSalesReport clamps this server-side too, but reflecting it in the
@@ -124,7 +130,7 @@ const SalesReport = ({ open, onClose, restricted }) => {
 			setLoading(true);
 			getReport(startDate, endDate).finally(() => setLoading(false));
 		}
-	}, [startDate, endDate]);
+	}, [startDate, endDate, channelFilter]);
 
 	const handleSort = (property) => {
 		const isAsc = orderBy === property && order === "asc";
@@ -251,7 +257,7 @@ const SalesReport = ({ open, onClose, restricted }) => {
 		let startDt = start ? new Date(start) : null;
 		let endDt = end ? new Date(end) : null;
 
-		return fetchSalesReport(startDt, endDt)
+		return fetchSalesReport(startDt, endDt, channelFilter === "all" ? undefined : channelFilter)
 			.then((data) => setReportData(data))
 			.catch((error) => {
 				console.error("Error fetching sales report:", error);
@@ -292,6 +298,18 @@ const SalesReport = ({ open, onClose, restricted }) => {
 							</Button>
 						</>
 					)}
+				</Box>
+				<Box sx={{ display: "flex", justifyContent: "flex-end", mb: 2 }}>
+					<ToggleButtonGroup
+						size="small"
+						value={channelFilter}
+						exclusive
+						onChange={(e, value) => value && setChannelFilter(value)}
+					>
+						<ToggleButton value="all">All</ToggleButton>
+						<ToggleButton value="pos">POS</ToggleButton>
+						<ToggleButton value="self_checkout">Self-Checkout</ToggleButton>
+					</ToggleButtonGroup>
 				</Box>
 				<Box sx={{ display: "flex", gap: 2, mb: 2 }}>
 					<TextField

@@ -44,6 +44,33 @@ describe("checkout", () => {
 		expect(deps.databases.createDocument).not.toHaveBeenCalled();
 	});
 
+	test("defaults channel to 'pos' when getChannel isn't provided", async () => {
+		const deps = makeDeps({ getPaymentMethod: jest.fn().mockReturnValue("cash") });
+		await createCheckout(deps)();
+
+		expect(deps.databases.createDocument).toHaveBeenCalledWith(
+			"db1",
+			"txns",
+			"generated-id",
+			expect.objectContaining({ channel: "pos" }),
+		);
+	});
+
+	test("passes through channel:'self_checkout' when getChannel returns it", async () => {
+		const deps = makeDeps({
+			getPaymentMethod: jest.fn().mockReturnValue("stripe"),
+			getChannel: jest.fn().mockReturnValue("self_checkout"),
+		});
+		await createCheckout(deps)();
+
+		expect(deps.databases.createDocument).toHaveBeenCalledWith(
+			"db1",
+			"txns",
+			"generated-id",
+			expect.objectContaining({ channel: "self_checkout" }),
+		);
+	});
+
 	test("cash: creates a pending transaction and opens the cash modal", async () => {
 		const deps = makeDeps({ getPaymentMethod: jest.fn().mockReturnValue("cash") });
 		await createCheckout(deps)();

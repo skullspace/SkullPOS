@@ -64,9 +64,24 @@ describe("processBarcode", () => {
 		);
 	});
 
-	test("does not add the found item to the cart automatically", () => {
+	test("does not add the found item to the cart automatically by default (staff POS)", () => {
 		const deps = makeDeps();
 		createProcessBarcode(deps)("0123456789");
+		expect(deps.addItemToCart).not.toHaveBeenCalled();
+	});
+
+	test("autoAddOnScan:true adds the matched item to the cart immediately (self-checkout)", () => {
+		const deps = makeDeps();
+		createProcessBarcode({ ...deps, autoAddOnScan: true })("0123456789");
+		expect(deps.addItemToCart).toHaveBeenCalledWith("beer");
+		expect(deps.setStripeAlert).toHaveBeenCalledWith(
+			expect.objectContaining({ type: "success", message: "Scanned: Beer" }),
+		);
+	});
+
+	test("autoAddOnScan:true does not add anything when the barcode doesn't match", () => {
+		const deps = makeDeps();
+		createProcessBarcode({ ...deps, autoAddOnScan: true })("9999999999");
 		expect(deps.addItemToCart).not.toHaveBeenCalled();
 	});
 });
