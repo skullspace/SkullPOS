@@ -56,6 +56,39 @@ describe("checkout", () => {
 		);
 	});
 
+	test("defaults member_name/member_email to null when not provided", async () => {
+		const deps = makeDeps({ getPaymentMethod: jest.fn().mockReturnValue("cash") });
+		await createCheckout(deps)();
+
+		expect(deps.databases.createDocument).toHaveBeenCalledWith(
+			"db1",
+			"txns",
+			"generated-id",
+			expect.objectContaining({ member_name: null, member_email: null }),
+		);
+	});
+
+	test("passes through member_name/member_email for a membership-dues payment", async () => {
+		const deps = makeDeps({
+			getPaymentMethod: jest.fn().mockReturnValue("stripe"),
+			getChannel: jest.fn().mockReturnValue("membership"),
+			getMemberName: jest.fn().mockReturnValue("Jane Member"),
+			getMemberEmail: jest.fn().mockReturnValue("jane@example.com"),
+		});
+		await createCheckout(deps)();
+
+		expect(deps.databases.createDocument).toHaveBeenCalledWith(
+			"db1",
+			"txns",
+			"generated-id",
+			expect.objectContaining({
+				channel: "membership",
+				member_name: "Jane Member",
+				member_email: "jane@example.com",
+			}),
+		);
+	});
+
 	test("passes through channel:'self_checkout' when getChannel returns it", async () => {
 		const deps = makeDeps({
 			getPaymentMethod: jest.fn().mockReturnValue("stripe"),

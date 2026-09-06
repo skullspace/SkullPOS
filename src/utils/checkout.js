@@ -14,6 +14,8 @@ export default function createCheckout(deps) {
 		getDiscount,
 		getCreatedBy,
 		getChannel,
+		getMemberName,
+		getMemberEmail,
 		getPaymentMethod,
 		getGiftcard,
 		setGiftcard,
@@ -58,6 +60,11 @@ export default function createCheckout(deps) {
 			// lets Transaction-RecordPayment refuse a non-card leg on a
 			// self-checkout sale server-side.
 			channel: getChannel ? getChannel() : "pos",
+			// Only set for a membership-dues payment (see selfCheckout.js) --
+			// null for every other sale. Read by Transaction-RecordPayment to
+			// address the automatic finance notification.
+			member_name: getMemberName ? getMemberName() : null,
+			member_email: getMemberEmail ? getMemberEmail() : null,
 		};
 
 		try {
