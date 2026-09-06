@@ -14,6 +14,7 @@ import { useAppwrite } from "../utils/api";
 import { useNavigate } from "react-router-dom";
 import AuthForm from "./auth/AuthForm";
 import PinEntryDialog from "./PinEntryDialog";
+import ForgotPasswordDialog from "./ForgotPasswordDialog";
 
 /**
  * Login component
@@ -31,6 +32,7 @@ const Login = () => {
 	});
 	const [errorMessage, setErrorMessage] = useState("");
 	const [pinDialogOpen, setPinDialogOpen] = useState(false);
+	const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
 
 	/**
 	 * Handle field value changes
@@ -76,6 +78,10 @@ const Login = () => {
 	// console and added to a team; everyone else uses the PIN below.
 	const secondaryActions = [
 		{
+			label: "Forgot Password?",
+			onClick: () => setForgotPasswordOpen(true),
+		},
+		{
 			label: "Quick Access PIN",
 			onClick: () => setPinDialogOpen(true),
 		},
@@ -94,6 +100,7 @@ const Login = () => {
 				secondaryActions={secondaryActions}
 			/>
 			<PinEntryDialog open={pinDialogOpen} onClose={() => setPinDialogOpen(false)} />
+			<ForgotPasswordDialog open={forgotPasswordOpen} onClose={() => setForgotPasswordOpen(false)} />
 		</>
 	);
 };

@@ -22,6 +22,7 @@ import { BrowserRouter as Router, Navigate, Route, Routes, useNavigate } from "r
 import Login from "./components/login";
 import POS from "./components/pos/pos";
 import SelfCheckout from "./components/selfCheckout/selfCheckout";
+import RecoveryPage from "./components/RecoveryPage";
 
 /**
  * Gate for the /pos route. Renders nothing until the session check
@@ -198,7 +199,8 @@ export default function App() {
 				/>
 				{/* Catches a stale /register bookmark too, now that
 				self-registration has been removed. */}
-				<Route path="*" element={<Navigate to="/login" replace />} />
+				<Route path="/recovery" element={<RecoveryPage />} />
+					<Route path="*" element={<Navigate to="/login" replace />} />
 			</Routes>
 		</Router>
 	);
