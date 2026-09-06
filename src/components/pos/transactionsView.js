@@ -19,11 +19,13 @@ import {
 	DialogTitle,
 	DialogContent,
 	DialogActions,
+	TextField,
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import { formatCAD } from "../../utils/format";
 import { refundTransaction } from "../../utils/refund";
+import { emailReceipt } from "../../utils/receipt";
 import { derivePaymentLegs, PAYMENT_METHOD_LABELS } from "../../utils/splitPayment";
 
 const modalStyle = {
@@ -54,7 +56,7 @@ function parseCart(cartJson) {
 	}
 }
 
-function TransactionRow({ transaction, isRefunding, onRefund, restricted }) {
+function TransactionRow({ transaction, isRefunding, onRefund, isSendingReceipt, onEmailReceipt, restricted }) {
 	const [expanded, setExpanded] = React.useState(false);
 	const cart = React.useMemo(() => parseCart(transaction.cart), [transaction.cart]);
 	const paymentLegs = React.useMemo(() => derivePaymentLegs(transaction), [transaction]);
@@ -133,21 +135,35 @@ function TransactionRow({ transaction, isRefunding, onRefund, restricted }) {
 								)}
 							</Box>
 
-							{transaction.status === "complete" && !restricted && (
-								<Button
-									sx={{ mt: 2 }}
-									size="small"
-									color="error"
-									variant="outlined"
-									disabled={isRefunding}
-									onClick={(e) => {
-										e.stopPropagation();
-										onRefund(transaction);
-									}}
-								>
-									{isRefunding ? "Refunding..." : "Refund"}
-								</Button>
-							)}
+							<Box sx={{ display: "flex", gap: 1, mt: 2 }}>
+								{(transaction.status === "complete" || transaction.status === "refunded") && (
+									<Button
+										size="small"
+										variant="outlined"
+										disabled={isSendingReceipt}
+										onClick={(e) => {
+											e.stopPropagation();
+											onEmailReceipt(transaction);
+										}}
+									>
+										{isSendingReceipt ? "Sending..." : "Email Receipt"}
+									</Button>
+								)}
+								{transaction.status === "complete" && !restricted && (
+									<Button
+										size="small"
+										color="error"
+										variant="outlined"
+										disabled={isRefunding}
+										onClick={(e) => {
+											e.stopPropagation();
+											onRefund(transaction);
+										}}
+									>
+										{isRefunding ? "Refunding..." : "Refund"}
+									</Button>
+								)}
+							</Box>
 						</Box>
 					</Collapse>
 				</TableCell>
@@ -168,6 +184,9 @@ const TransactionsView = ({
 	const [transactions, setTransactions] = React.useState([]);
 	const [pendingRefund, setPendingRefund] = React.useState(null);
 	const [refundingId, setRefundingId] = React.useState(null);
+	const [pendingReceipt, setPendingReceipt] = React.useState(null);
+	const [receiptEmail, setReceiptEmail] = React.useState("");
+	const [sendingReceiptId, setSendingReceiptId] = React.useState(null);
 
 	const loadRecent = React.useCallback(() => {
 		setLoading(true);
@@ -198,6 +217,24 @@ const TransactionsView = ({
 			setStripeAlert({ active: true, message: err.message || "Refund failed", type: "error" });
 		} finally {
 			setRefundingId(null);
+		}
+	};
+
+	const doEmailReceipt = async () => {
+		const transaction = pendingReceipt;
+		const email = receiptEmail.trim();
+		if (!transaction || !email) return;
+		setPendingReceipt(null);
+		setReceiptEmail("");
+		setSendingReceiptId(transaction.$id);
+		try {
+			await emailReceipt({ functions, transactionId: transaction.$id, email });
+			setStripeAlert({ active: true, message: `Receipt sent to ${email}`, type: "success" });
+		} catch (err) {
+			console.error("Email receipt failed:", err);
+			setStripeAlert({ active: true, message: err.message || "Failed to send receipt", type: "error" });
+		} finally {
+			setSendingReceiptId(null);
 		}
 	};
 
@@ -244,6 +281,8 @@ const TransactionsView = ({
 												transaction={t}
 												isRefunding={refundingId === t.$id}
 												onRefund={setPendingRefund}
+												isSendingReceipt={sendingReceiptId === t.$id}
+												onEmailReceipt={setPendingReceipt}
 												restricted={restricted}
 											/>
 										))
@@ -282,6 +321,28 @@ const TransactionsView = ({
 					<Button onClick={() => setPendingRefund(null)}>Cancel</Button>
 					<Button color="error" variant="contained" onClick={doRefund}>
 						Refund
+					</Button>
+				</DialogActions>
+			</Dialog>
+
+			<Dialog open={!!pendingReceipt} onClose={() => setPendingReceipt(null)}>
+				<DialogTitle>Email Receipt</DialogTitle>
+				<DialogContent>
+					<TextField
+						autoFocus
+						margin="normal"
+						label="Customer's email"
+						type="email"
+						fullWidth
+						value={receiptEmail}
+						onChange={(e) => setReceiptEmail(e.target.value)}
+						onKeyDown={(e) => e.key === "Enter" && doEmailReceipt()}
+					/>
+				</DialogContent>
+				<DialogActions>
+					<Button onClick={() => setPendingReceipt(null)}>Cancel</Button>
+					<Button variant="contained" disabled={!receiptEmail.trim()} onClick={doEmailReceipt}>
+						Send
 					</Button>
 				</DialogActions>
 			</Dialog>

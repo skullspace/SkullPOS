@@ -31,6 +31,7 @@ import createHandleCardPayment from "../../utils/handleCardPayment";
 import createProcessBarcode from "../../utils/barcode";
 import { addItemToCart as addItemToCartUtil, removeItemFromCart as removeItemFromCartUtil } from "../../utils/cartUtils";
 import { verifyPin } from "../../utils/pin";
+import { emailReceipt } from "../../utils/receipt";
 import { formatCAD } from "../../utils/format";
 import SelfCheckoutCategory from "./selfCheckoutCategory";
 
@@ -65,6 +66,9 @@ const SelfCheckout = () => {
 	const [staffPin, setStaffPin] = useState("");
 	const [staffPinError, setStaffPinError] = useState("");
 	const [staffPinChecking, setStaffPinChecking] = useState(false);
+	const [receiptEmail, setReceiptEmail] = useState("");
+	// "idle" | "sending" | "sent" | "error"
+	const [receiptStatus, setReceiptStatus] = useState("idle");
 	const transactionId = useRef(null);
 
 	const total = useMemo(() => cart.reduce((acc, item) => acc + item.price * item.quantity, 0), [cart]);
@@ -243,6 +247,8 @@ const SelfCheckout = () => {
 				// idle for the next person.
 				setCheckoutSuccess(false);
 				clearCart();
+				setReceiptEmail("");
+				setReceiptStatus("idle");
 			} else if (!transactionInProgress && !cardChargeUnconfirmed && cart.length > 0) {
 				clearCart();
 				if (checkoutError) setCheckoutError("");
@@ -279,6 +285,25 @@ const SelfCheckout = () => {
 		} finally {
 			setStaffPinChecking(false);
 		}
+	}
+
+	async function sendReceipt() {
+		const email = receiptEmail.trim();
+		if (!email || !transactionId.current) return;
+		setReceiptStatus("sending");
+		try {
+			await emailReceipt({ functions, transactionId: transactionId.current, email });
+			setReceiptStatus("sent");
+		} catch (err) {
+			setReceiptStatus("error");
+		}
+	}
+
+	function startNewOrder() {
+		setCheckoutSuccess(false);
+		clearCart();
+		setReceiptEmail("");
+		setReceiptStatus("idle");
 	}
 
 	// --- Screen states ---------------------------------------------------
@@ -357,15 +382,43 @@ const SelfCheckout = () => {
 			<Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", gap: 2 }}>
 				<Typography variant="h4">Thank you!</Typography>
 				<Typography color="text.secondary">Please take your card and receipt.</Typography>
-				<Button
-					variant="contained"
-					size="large"
-					sx={{ mt: 3 }}
-					onClick={() => {
-						setCheckoutSuccess(false);
-						clearCart();
-					}}
-				>
+
+				{receiptStatus === "sent" ? (
+					<Typography color="success.main">Receipt sent to {receiptEmail}!</Typography>
+				) : (
+					<Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1, mt: 2 }}>
+						<Typography variant="body2" color="text.secondary">
+							Want an emailed receipt? (optional)
+						</Typography>
+						<Box sx={{ display: "flex", gap: 1 }}>
+							<TextField
+								size="small"
+								type="email"
+								placeholder="you@example.com"
+								value={receiptEmail}
+								onChange={(e) => {
+									setReceiptEmail(e.target.value);
+									if (receiptStatus === "error") setReceiptStatus("idle");
+								}}
+								onKeyDown={(e) => e.key === "Enter" && sendReceipt()}
+							/>
+							<Button
+								variant="outlined"
+								disabled={!receiptEmail.trim() || receiptStatus === "sending"}
+								onClick={sendReceipt}
+							>
+								{receiptStatus === "sending" ? "Sending..." : "Email My Receipt"}
+							</Button>
+						</Box>
+						{receiptStatus === "error" && (
+							<Typography color="error.main" variant="body2">
+								Couldn't send that -- check the address and try again.
+							</Typography>
+						)}
+					</Box>
+				)}
+
+				<Button variant="contained" size="large" sx={{ mt: 3 }} onClick={startNewOrder}>
 					New Order
 				</Button>
 			</Box>
