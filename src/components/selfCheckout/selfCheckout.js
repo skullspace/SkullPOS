@@ -42,11 +42,6 @@ const IDLE_RESET_MS = 90 * 1000;
 // rather than leaving a customer stuck at a frozen screen forever.
 const PAYMENT_TIMEOUT_MS = 60 * 1000;
 const TERMINAL_STORAGE_KEY = "skullpos_kiosk_terminal_id";
-// Fixed monthly dues -- not config-driven for this pass (see Transaction-
-// RecordPayment, which automatically emails finance when a channel:
-// "membership" transaction completes).
-const MEMBERSHIP_DUES_CENTS = 4000;
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const SelfCheckout = () => {
 	const { databases, config, categories, items, refreshCategories, refreshItems, uniqueId, functions, logout, pinMode } =
@@ -75,16 +70,6 @@ const SelfCheckout = () => {
 	// "idle" | "sending" | "sent" | "error"
 	const [receiptStatus, setReceiptStatus] = useState("idle");
 	const transactionId = useRef(null);
-
-	// Membership dues payment -- a standalone flow alongside the regular
-	// shop checkout, sharing the transactionInProgress/checkoutSuccess/
-	// checkoutError states above (so the processing/stuck/declined screens
-	// already handle it) but with its own info-collection steps.
-	// null | "info" | "confirm"
-	const [membershipStep, setMembershipStep] = useState(null);
-	const [memberName, setMemberName] = useState("");
-	const [memberEmail, setMemberEmail] = useState("");
-	const lastPurchaseWasMembership = useRef(false);
 
 	const total = useMemo(() => cart.reduce((acc, item) => acc + item.price * item.quantity, 0), [cart]);
 
@@ -156,87 +141,6 @@ const SelfCheckout = () => {
 			}),
 		[databases, config, functions, uniqueId, pinMode, cart, total, setTransactionInProgress, handleCardPayment],
 	);
-
-	// Membership dues payment -- a second, independent instance of the same
-	// two factories (not the shop's), since the amount/cart/success-cleanup
-	// are entirely different: a fixed $40 "item" instead of whatever's in
-	// the shop cart, and "success cleanup" means resetting the membership
-	// form, not the shop cart.
-	const membershipHandleCardPayment = useMemo(
-		() =>
-			createHandleCardPayment({
-				chargeCard: (amount, retrying) =>
-					Promise.race([
-						chargeCard(amount, retrying),
-						new Promise((_, reject) =>
-							setTimeout(() => {
-								stopTransactionInProgress();
-								reject(new Error("Payment timed out -- no card was presented in time."));
-							}, PAYMENT_TIMEOUT_MS),
-						),
-					]),
-				terminal,
-				functions,
-				setStripeAlert: () => {},
-				setTransactionInProgress,
-				setCheckoutError,
-				setCheckoutSuccess,
-				setCardChargeUnconfirmed,
-				clearCart: () => {
-					setMemberName("");
-					setMemberEmail("");
-					setMembershipStep(null);
-				},
-				setPaymentMethod: () => {},
-				formatCAD,
-				getTotal: () => MEMBERSHIP_DUES_CENTS,
-				getCart: () => [{ name: "Membership Dues", quantity: 1, price: MEMBERSHIP_DUES_CENTS }],
-			}),
-		[chargeCard, terminal, functions, setTransactionInProgress],
-	);
-
-	const membershipCheckout = useMemo(
-		() =>
-			createCheckout({
-				databases,
-				config,
-				functions,
-				uniqueId,
-				getCreatedBy: () => pinMode?.label || "Self-Checkout",
-				getChannel: () => "membership",
-				getMemberName: () => memberName,
-				getMemberEmail: () => memberEmail,
-				getCart: () => [{ name: "Membership Dues", quantity: 1, price: MEMBERSHIP_DUES_CENTS }],
-				getTotal: () => MEMBERSHIP_DUES_CENTS,
-				getDiscount: () => 0,
-				getPaymentMethod: () => "stripe",
-				transactionIdRef: transactionId,
-				setTransactionInProgress,
-				setCheckoutError,
-				handleCardPayment: membershipHandleCardPayment,
-				clearCart: () => {},
-				setCheckoutSuccess,
-				setPaymentMethod: () => {},
-			}),
-		[
-			databases,
-			config,
-			functions,
-			uniqueId,
-			pinMode,
-			memberName,
-			memberEmail,
-			setTransactionInProgress,
-			membershipHandleCardPayment,
-		],
-	);
-
-	function payMembershipDues() {
-		lastPurchaseWasMembership.current = true;
-		setReceiptEmail(memberEmail);
-		setReceiptStatus("idle");
-		membershipCheckout();
-	}
 
 	// Barcode scanner keyboard capture -- same HID-keyboard-emulation
 	// handling the staff POS terminal uses (see components/pos/pos.js).
@@ -331,7 +235,7 @@ const SelfCheckout = () => {
 
 	useEffect(() => {
 		lastActivityRef.current = Date.now();
-	}, [cart.length, checkoutSuccess, membershipStep]);
+	}, [cart.length, checkoutSuccess]);
 
 	useEffect(() => {
 		const interval = setInterval(() => {
@@ -339,22 +243,19 @@ const SelfCheckout = () => {
 			if (idleMs < IDLE_RESET_MS) return;
 
 			if (checkoutSuccess) {
-				// Customer walked away without tapping "New Order"/"Done" --
-				// return to idle for the next person.
-				startNewOrder();
-			} else if (membershipStep) {
-				// Abandoned mid-membership-signup -- same idea as an abandoned
-				// cart below.
-				setMembershipStep(null);
-				setMemberName("");
-				setMemberEmail("");
+				// Customer walked away without tapping "New Order" -- return to
+				// idle for the next person.
+				setCheckoutSuccess(false);
+				clearCart();
+				setReceiptEmail("");
+				setReceiptStatus("idle");
 			} else if (!transactionInProgress && !cardChargeUnconfirmed && cart.length > 0) {
 				clearCart();
 				if (checkoutError) setCheckoutError("");
 			}
 		}, 5000);
 		return () => clearInterval(interval);
-	}, [checkoutSuccess, transactionInProgress, cardChargeUnconfirmed, cart.length, checkoutError, membershipStep]);
+	}, [checkoutSuccess, transactionInProgress, cardChargeUnconfirmed, cart.length, checkoutError]);
 
 	const cartQuantities = useMemo(() => {
 		const m = {};
@@ -403,22 +304,7 @@ const SelfCheckout = () => {
 		clearCart();
 		setReceiptEmail("");
 		setReceiptStatus("idle");
-		lastPurchaseWasMembership.current = false;
-		setMembershipStep(null);
-		setMemberName("");
-		setMemberEmail("");
 	}
-
-	// Auto-sends the member their own receipt right after a successful
-	// membership payment -- their email was already collected specifically
-	// for this, so (unlike the shop flow) there's no need to ask again via
-	// a manual button.
-	useEffect(() => {
-		if (checkoutSuccess && lastPurchaseWasMembership.current && receiptStatus === "idle" && receiptEmail) {
-			sendReceipt();
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [checkoutSuccess]);
 
 	// --- Screen states ---------------------------------------------------
 
@@ -491,23 +377,6 @@ const SelfCheckout = () => {
 		);
 	}
 
-	if (checkoutSuccess && lastPurchaseWasMembership.current) {
-		return (
-			<Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", gap: 2 }}>
-				<Typography variant="h4">Thank you!</Typography>
-				<Typography color="text.secondary">Your membership dues have been paid.</Typography>
-				{receiptStatus === "sent" && <Typography color="success.main">A receipt has been sent to {receiptEmail}.</Typography>}
-				{receiptStatus === "sending" && <Typography color="text.secondary">Sending your receipt...</Typography>}
-				{receiptStatus === "error" && (
-					<Typography color="text.secondary">Payment complete -- we couldn't email a receipt, though.</Typography>
-				)}
-				<Button variant="contained" size="large" sx={{ mt: 3 }} onClick={startNewOrder}>
-					Done
-				</Button>
-			</Box>
-		);
-	}
-
 	if (checkoutSuccess) {
 		return (
 			<Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", gap: 2 }}>
@@ -568,71 +437,14 @@ const SelfCheckout = () => {
 		);
 	}
 
-	if (membershipStep === "info") {
-		const canContinue = memberName.trim() && EMAIL_PATTERN.test(memberEmail.trim());
-		return (
-			<Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", gap: 2, p: 4 }}>
-				<Typography variant="h5">Pay Membership Dues</Typography>
-				<Typography color="text.secondary">$40.00/month -- please enter your details.</Typography>
-				<TextField
-					sx={{ width: 320 }}
-					label="Name"
-					value={memberName}
-					onChange={(e) => setMemberName(e.target.value)}
-					autoFocus
-				/>
-				<TextField
-					sx={{ width: 320 }}
-					label="Email"
-					type="email"
-					value={memberEmail}
-					onChange={(e) => setMemberEmail(e.target.value)}
-					onKeyDown={(e) => e.key === "Enter" && canContinue && setMembershipStep("confirm")}
-				/>
-				<Box sx={{ display: "flex", gap: 1, mt: 2 }}>
-					<Button onClick={() => setMembershipStep(null)}>Cancel</Button>
-					<Button variant="contained" disabled={!canContinue} onClick={() => setMembershipStep("confirm")}>
-						Continue
-					</Button>
-				</Box>
-			</Box>
-		);
-	}
-
-	if (membershipStep === "confirm") {
-		return (
-			<Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", gap: 2, p: 4, textAlign: "center" }}>
-				<Typography variant="h5">Confirm Membership Payment</Typography>
-				<Typography>{memberName}</Typography>
-				<Typography color="text.secondary">{memberEmail}</Typography>
-				<Typography variant="h4" sx={{ mt: 2 }}>
-					{formatCAD(MEMBERSHIP_DUES_CENTS)}
-				</Typography>
-				<Box sx={{ display: "flex", gap: 1, mt: 2 }}>
-					<Button onClick={() => setMembershipStep("info")}>Back</Button>
-					<Button variant="contained" onClick={payMembershipDues}>
-						Pay {formatCAD(MEMBERSHIP_DUES_CENTS)}
-					</Button>
-				</Box>
-			</Box>
-		);
-	}
-
 	return (
 		<Box sx={{ display: "flex", height: "100vh" }}>
 			<Box sx={{ flex: 1, overflow: "auto", py: 2 }}>
 				<Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mx: 2.5, mb: 1 }}>
 					<Typography variant="h5">Self-Checkout</Typography>
-					<Box sx={{ display: "flex", gap: 1 }}>
-						{cart.length === 0 && (
-							<Button size="small" variant="outlined" onClick={() => setMembershipStep("info")}>
-								Pay Membership Dues
-							</Button>
-						)}
-						<Button size="small" onClick={logout}>
-							Log out
-						</Button>
-					</Box>
+					<Button size="small" onClick={logout}>
+						Log out
+					</Button>
 				</Box>
 				{scanMessage && (
 					<Typography sx={{ mx: 2.5, mb: 1 }} color="error">
@@ -676,15 +488,7 @@ const SelfCheckout = () => {
 					<span>Total</span>
 					<span>{formatCAD(total)}</span>
 				</Typography>
-				<Button
-					variant="contained"
-					size="large"
-					disabled={cart.length === 0}
-					onClick={() => {
-						lastPurchaseWasMembership.current = false;
-						checkout();
-					}}
-				>
+				<Button variant="contained" size="large" disabled={cart.length === 0} onClick={checkout}>
 					Pay {formatCAD(total)}
 				</Button>
 			</Box>
