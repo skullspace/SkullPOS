@@ -395,6 +395,28 @@ export function useAppwrite() {
 		return result.documents || [];
 	}
 
+	/**
+	 * Sends a password-recovery email for a staff account. `url` is where
+	 * Appwrite sends the customer -- must land on RecoveryPage
+	 * (see App.js's /recovery route), which reads the userId/secret query
+	 * params this same email embeds and calls completePasswordRecovery.
+	 */
+	const requestPasswordRecovery = useCallback(
+		(email) => account.createRecovery({ email, url: `${window.location.origin}/recovery` }),
+		[account],
+	);
+
+	/**
+	 * Completes a password recovery -- userId/secret come from the emailed
+	 * link's query params (see RecoveryPage.js), not from anything the user
+	 * types, so this can't be used to reset an arbitrary account without
+	 * already having that emailed link.
+	 */
+	const completePasswordRecovery = useCallback(
+		(userId, secret, password) => account.updateRecovery({ userId, secret, password }),
+		[account],
+	);
+
 	// Return all public methods and state
 	return {
 		client,
@@ -412,6 +434,8 @@ export function useAppwrite() {
 		settings: data,
 		login,
 		loginWithPin,
+		requestPasswordRecovery,
+		completePasswordRecovery,
 		pinMode,
 		logout,
 		uniqueId: ID.unique,
