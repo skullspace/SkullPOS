@@ -2,13 +2,20 @@
 
 This covers everything that needs a human at a real terminal to verify --
 real Stripe Terminal hardware, physical PIN entry, actual card charges/
-refunds, and cross-view behavior that unit tests can't see. Everything
-else (payment math, idempotency, staff/PIN authorization, per-leg
-aggregation) is covered by the automated suites:
-- `AppwriteFunctions`: `npx jest` (90 tests, all 9 deployed functions)
-- `POS`: `npm test` (69 tests, all client-side payment/cart/checkout utils)
+refunds, real email delivery, and cross-view behavior that unit tests
+can't see. Everything else (payment math, idempotency, staff/PIN
+authorization, per-leg aggregation) is covered by the automated suites:
+- `AppwriteFunctions`: `npx jest` (127 tests, all 10 deployed functions)
+- `POS`: `npm test` (89 tests)
 
 Run those first. This document is for what they can't reach.
+
+This document describes production (`main`). It does **not** include
+the membership-dues payment flow -- that was deliberately held back from
+production and only lives on `uat` (`uat.skullpos.shotty.tech`) pending
+approval to ship it; self-checkout's "Pay Membership Dues" button will
+not be present here. See `uat`'s copy of this file (§11.5-11.6 there)
+for those test steps.
 
 ## Test environment setup
 
@@ -96,15 +103,20 @@ giftcard prefix.
 **Expected:** Routed into the giftcard flow (lookup + balance shown),
 not treated as an item lookup.
 
-### 2.5 Long-press to disable an item (known issue -- verify current behavior)
-**Steps:** Long-press an item tile.
-**Expected / known gap:** This was flagged earlier this session as
-using the wrong field (`enabled_menu` vs `enabled_pos`) and the
-hard-hide-vs-gray-out UX was never reconciled. Manually confirm: what
-actually happens today, whether newly-added items (which default to
-`enabled_pos: false`) are reachable/enablable from the UI at all, and
-whether this still needs the follow-up fix discussed but not yet
-approved.
+### 2.5 Long-press to "86" an item
+**Steps:** Long-press an item tile at the register.
+**Expected:** The tile grays out and becomes unsellable (tapping it no
+longer adds it to cart) for the rest of this browser session -- long-press
+again to re-enable it for this session. This is a same-session-only
+toggle (`item.js`'s local `disabled` state resets on reload) that
+**also** persists server-side by clearing the item's `enabled_menu` flag
+(via `Item-SetEnabled`), which pulls it off the customer-facing MEnu
+display board too -- confirm both halves actually happen (register tile
+grays out immediately, and the MEnu app stops showing it).
+Note: an item with `enabled_pos: false` (a brand-new, not-yet-configured
+item) doesn't render as a tile at all, so it can't be long-pressed here --
+see §13 (Manage Items) for making a new item reachable in the first
+place.
 
 ---
 
@@ -394,7 +406,122 @@ uses it, not the old one.
 
 ---
 
-## 11. Regression checks specific to this session's changes
+## 11. Self-Checkout Kiosk
+
+### 11.1 Kiosk PIN login
+**Steps:** From the login screen, choose "Quick Access PIN", enter the
+self-checkout kiosk's PIN (not a staff/cashier PIN).
+**Expected:** Lands on `/self-checkout`, not `/pos`. Logging in with a
+staff email/password or an ordinary cashier PIN must **not** reach
+`/self-checkout`.
+
+### 11.2 Card-only enforcement
+**Steps:** Add items at self-checkout and reach checkout.
+**Expected:** Only a card/tap payment path is offered -- no cash or
+gift-card option is reachable anywhere in the self-checkout UI.
+
+### 11.3 Idle reset (90 seconds)
+**Steps:** Add items to the cart, then stop touching the screen for 90
+seconds.
+**Expected:** The screen resets back to the empty shop view on its own
+-- an abandoned cart doesn't sit there waiting for the next customer.
+
+### 11.4 Manual "Email My Receipt"
+**Steps:** Complete a normal item purchase at self-checkout.
+**Expected:** The success screen offers an email field for the
+receipt; entering an address and submitting sends it (confirm delivery
+via Resend's log or the inbox).
+
+Membership dues (a second, card-only payment flow reachable from an
+empty cart) is `uat`-only right now -- see that branch's copy of this
+document for its test steps.
+
+---
+
+## 12. Email Receipts
+
+### 12.1 Transactions view -- Email Receipt button
+**Steps:** Open Transactions (staff), expand a `complete` or
+`refunded` transaction.
+**Expected:** An "Email Receipt" button appears next to Refund --
+available even in PIN-restricted mode, unlike Refund. Entering an
+email and confirming sends a receipt (confirm delivery).
+
+### 12.2 Self-checkout manual receipt
+See §11.4.
+
+### 12.3 Receipt content sanity check
+**Steps:** Open a received receipt email.
+**Expected:** Itemized cart and correct total, recognizable as a
+SkullPOS receipt rather than a raw/blank template.
+
+---
+
+## 13. Manage Items
+
+### 13.1 Reachability is staff-login-only
+**Steps:** Log in as staff via email/password, open the hamburger
+menu. Separately, log in via **any** quick-access PIN (including the
+one labeled "Staff") and open the same menu.
+**Expected:** "Manage Items" appears between Transactions and the
+alcohol-hide toggle for the email/password login, and is **absent**
+for every PIN login -- catalog management is deliberately staff-login
+only, not reachable from a quick-access PIN even when that PIN is
+labeled "Staff".
+
+### 13.2 Making a brand-new item sellable
+**Steps:** Create a new item directly in the Appwrite console (or use
+one just added) -- it defaults to invisible everywhere, since it won't
+appear anywhere in the register grid yet. Open Manage Items, search
+for it by name, toggle "At Register" on.
+**Expected:** The item now appears -- and is addable to cart -- back on
+the main POS screen without a page reload. This is the in-app path
+that didn't exist before this feature (previously required editing the
+item directly in the Appwrite console).
+
+### 13.3 Customer-menu toggle
+**Steps:** In Manage Items, toggle "On Customer Menu" for an item.
+**Expected:** Reflected in the MEnu customer-facing display app (a
+separate app -- confirm it actually picks up the change on its own
+refresh cycle).
+
+### 13.4 Search filter
+**Steps:** Type a partial item name into the search box.
+**Expected:** The list filters live, case-insensitively.
+
+---
+
+## 14. Password Recovery
+
+### 14.1 Request a reset
+**Steps:** From the login screen, click "Forgot Password?", enter a
+staff account's email.
+**Expected:** A generic "if that email has an account, a reset link
+has been sent" message shows regardless of whether the address is
+real (no account enumeration). A real email arrives if the account
+exists.
+
+### 14.2 Complete a reset
+**Steps:** Open the emailed link (lands on `/recovery?userId=...&secret=...`),
+enter a new password (8+ characters) and a matching confirmation,
+submit.
+**Expected:** Success message, "Back to Login" returns to `/login`.
+The new password actually works on a subsequent login; the old one no
+longer does.
+
+### 14.3 Invalid or already-used link
+**Steps:** Reuse a recovery link that already completed a reset once,
+or edit its `secret` query param to something invalid.
+**Expected:** A clear error message, not a crash or a silent no-op.
+
+### 14.4 Missing query params
+**Steps:** Navigate to `/recovery` directly with no query string.
+**Expected:** A clear "this link is missing information" message, no
+crash.
+
+---
+
+## 15. Regression checks specific to this session's changes
 
 - [ ] A transaction created **before** the split-payment migration
   (no `payments` field, only legacy `stripe_id`/`giftcard_amount`
@@ -404,8 +531,12 @@ uses it, not the old one.
   (the two retired functions) are actually gone from the deployed
   Appwrite project, not just unused in the client -- confirm nothing
   still calls them.
-- [ ] The "Test" admin-team account flagged during the earlier audit --
-  confirm its purpose/necessity has been resolved or is still tracked.
-- [ ] The placeholder `PINS_JSON` value flagged earlier -- confirm it
-  has actually been replaced with real, unique staff PINs before this
-  ships to real use.
+- [x] The "Test" admin-team account flagged during the earlier audit --
+  removed from the `admin` team; confirm it hasn't reappeared.
+- [x] The placeholder `PINS_JSON` value flagged earlier -- replaced
+  with real, unique staff/kiosk PINs; confirm nobody is still using a
+  since-rotated PIN out of habit.
+- [ ] `Item-SetEnabled`'s `field` allowlist (`enabled_menu`/
+  `enabled_pos` only) actually rejects any other field name -- protects
+  against the client gaining effective write access to arbitrary
+  `pos_items` fields through this endpoint.
