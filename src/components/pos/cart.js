@@ -44,6 +44,7 @@ const Cart = ({
 	onManualUPCEntry,
 	setOpenSalesReport,
 	setOpenTransactions,
+	setOpenManageItems,
 	hideAlcohol,
 	onToggleHideAlcohol,
 	onLogout,
@@ -137,6 +138,11 @@ const Cart = ({
 							<MenuItem onClick={() => setOpenTransactions(true)}>
 								Transactions
 							</MenuItem>
+							{setOpenManageItems && (
+								<MenuItem onClick={() => setOpenManageItems(true)}>
+									Manage Items
+								</MenuItem>
+							)}
 							<Divider />
 							<MenuItem
 								disableRipple

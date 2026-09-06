@@ -8,6 +8,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import { useAppwrite } from "../../utils/api";
 import SalesReport from "./salesReport";
 import TransactionsView from "./transactionsView";
+import ManageItemsView from "./manageItemsView";
 import Category from "./category";
 import { formatCAD } from "../../utils/format";
 import { useStripe } from "../../utils/stripe";
@@ -82,6 +83,7 @@ const POS = () => {
 	const [cashModalOpen, setCashModalOpen] = useState(false);
 	const [openSalesReport, setOpenSalesReport] = useState(false);
 	const [openTransactions, setOpenTransactions] = useState(false);
+	const [openManageItems, setOpenManageItems] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 	// Non-null while a "Split Payment" checkout is in progress -- the
 	// pending transaction already exists, and SplitPaymentPanel drives the
@@ -689,6 +691,7 @@ const POS = () => {
 				}}
 				setOpenSalesReport={setOpenSalesReport}
 				setOpenTransactions={setOpenTransactions}
+				setOpenManageItems={!pinMode ? setOpenManageItems : undefined}
 				onLogout={logout}
 				hideAlcohol={hideAlcohol}
 				onToggleHideAlcohol={(checked) => setHideAlcohol(checked)}
@@ -765,6 +768,14 @@ const POS = () => {
 				fetchTransactions={fetchTransactions}
 				setStripeAlert={setStripeAlert}
 				restricted={!!pinMode}
+			/>
+			<ManageItemsView
+				open={openManageItems}
+				onClose={() => setOpenManageItems(false)}
+				items={items}
+				functions={functions}
+				onItemUpdated={refreshItems}
+				setStripeAlert={setStripeAlert}
 			/>
 		</Box>
 	);
