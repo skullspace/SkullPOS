@@ -1,11 +1,9 @@
 import { useAppwrite } from "./api";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { loadStripeTerminal } from "@stripe/terminal-js";
+import { isTestEnvironment } from "./environment";
 
-// if on localhost, use test mode
-const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-
-const test = isLocalhost;
+const test = isTestEnvironment;
 
 export function useStripe() {
 	// call appwrite function : 68f2904a00171e8b0266

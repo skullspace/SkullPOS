@@ -1,9 +1,7 @@
 import { recordPayment } from "./splitPayment";
+import { isTestEnvironment } from "./environment";
 
-// if on localhost, use test mode
-const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-
-const test = isLocalhost;
+const test = isTestEnvironment;
 
 export default function createCheckout(deps) {
 	const {

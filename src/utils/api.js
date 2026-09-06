@@ -18,10 +18,9 @@ import { Client as Appwrite, Databases, Account, ID, Functions, Query } from "ap
 
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { verifyPin, getPinMode, setPinMode, clearPinMode } from "./pin";
+import { isTestEnvironment } from "./environment";
 
-// Detect environment: use test mode if running on localhost
-const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-const test = isLocalhost;
+const test = isTestEnvironment;
 
 /**
  * Appwrite configuration
