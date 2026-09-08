@@ -87,9 +87,10 @@ const SalesReport = ({ open, onClose, restricted }) => {
 	const [order, setOrder] = React.useState("desc");
 	const [startDate, setStartDate] = React.useState("");
 	const [endDate, setEndDate] = React.useState("");
-	// "all" | "pos" | "self_checkout" -- lets staff compare self-checkout
-	// kiosk sales against regular POS sales instead of only seeing them
-	// combined.
+	// "all" | "pos" | "self_checkout" | "membership" -- lets staff compare
+	// self-checkout kiosk sales against regular POS sales (and isolate
+	// membership dues, which aren't item-sales revenue) instead of only
+	// seeing everything combined.
 	const [channelFilter, setChannelFilter] = React.useState("all");
 
 	// A pin-mode cashier session can't look further back than 24 hours --
@@ -309,6 +310,7 @@ const SalesReport = ({ open, onClose, restricted }) => {
 						<ToggleButton value="all">All</ToggleButton>
 						<ToggleButton value="pos">POS</ToggleButton>
 						<ToggleButton value="self_checkout">Self-Checkout</ToggleButton>
+						<ToggleButton value="membership">Membership</ToggleButton>
 					</ToggleButtonGroup>
 				</Box>
 				<Box sx={{ display: "flex", gap: 2, mb: 2 }}>
