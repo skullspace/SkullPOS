@@ -33,6 +33,7 @@ import { addItemToCart as addItemToCartUtil, removeItemFromCart as removeItemFro
 import { verifyPin } from "../../utils/pin";
 import { emailReceipt } from "../../utils/receipt";
 import { formatCAD } from "../../utils/format";
+import { isTestEnvironment } from "../../utils/environment";
 import SelfCheckoutCategory from "./selfCheckoutCategory";
 
 // After this long with no tap/scan, an abandoned cart is cleared so the
@@ -59,6 +60,7 @@ const SelfCheckout = () => {
 		chargeCard,
 		terminalReady,
 		terminal,
+		initializeTerminal,
 		stopTransactionInProgress,
 		transactionInProgress,
 		setTransactionInProgress,
@@ -87,6 +89,51 @@ const SelfCheckout = () => {
 	const lastPurchaseWasMembership = useRef(false);
 
 	const total = useMemo(() => cart.reduce((acc, item) => acc + item.price * item.quantity, 0), [cart]);
+
+	// Mirrors the reader's on-screen order summary from pos.js -- self-
+	// checkout customers have no cashier and no receipt in hand until the
+	// end, so seeing the cart building up on the reader itself is the only
+	// running confirmation they get of what they're about to pay for.
+	useEffect(() => {
+		if (!terminal || !terminalReady) return;
+
+		let display;
+		if (membershipStep === "confirm") {
+			display = {
+				cart: {
+					line_items: [{ description: "Membership Dues", quantity: 1, amount: MEMBERSHIP_DUES_CENTS }],
+					total: MEMBERSHIP_DUES_CENTS,
+					currency: "cad",
+				},
+				type: "cart",
+			};
+		} else if (cart.length > 0) {
+			display = {
+				cart: {
+					line_items: cart.map((item) => ({
+						description: item.name + "\n\t\t(" + formatCAD(item.price) + "/ea)",
+						quantity: item.quantity,
+						amount: parseInt(item.price) * item.quantity,
+					})),
+					total: parseInt(total),
+					currency: "cad",
+				},
+				type: "cart",
+			};
+		}
+
+		if (!display) {
+			terminal.clearReaderDisplay();
+			return;
+		}
+
+		terminal
+			.setReaderDisplay(display)
+			.then((res) => {
+				if (res && res.error) initializeTerminal();
+			})
+			.catch(() => initializeTerminal());
+	}, [cart, total, membershipStep, terminal, terminalReady, initializeTerminal]);
 
 	function addItemToCart(itemId) {
 		setCart((prev) => addItemToCartUtil(prev, items, itemId));
@@ -632,7 +679,10 @@ const SelfCheckout = () => {
 				<Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mx: 2.5, mb: 1 }}>
 					<Typography variant="h5">Self-Checkout</Typography>
 					<Box sx={{ display: "flex", gap: 1 }}>
-						{cart.length === 0 && (
+						{/* Membership dues is uat/localhost-only for now -- hidden here
+						rather than gated deeper, since hiding the sole entry point
+						is sufficient to keep it unreachable in production. */}
+						{cart.length === 0 && isTestEnvironment && (
 							<Button size="small" variant="outlined" onClick={() => setMembershipStep("info")}>
 								Pay Membership Dues
 							</Button>
