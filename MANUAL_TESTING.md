@@ -6,16 +6,19 @@ refunds, real email delivery, and cross-view behavior that unit tests
 can't see. Everything else (payment math, idempotency, staff/PIN
 authorization, per-leg aggregation) is covered by the automated suites:
 - `AppwriteFunctions`: `npx jest` (127 tests, all 10 deployed functions)
-- `POS`: `npm test` (89 tests)
+- `POS`: `npm test` (91 tests)
 
 Run those first. This document is for what they can't reach.
 
-This document describes production (`main`). It does **not** include
-the membership-dues payment flow -- that was deliberately held back from
-production and only lives on `uat` (`uat.skullpos.shotty.tech`) pending
-approval to ship it; self-checkout's "Pay Membership Dues" button will
-not be present here. See `uat`'s copy of this file (§11.5-11.6 there)
-for those test steps.
+`main` and `uat` now share identical code for every feature below,
+including membership dues -- there's no branch-level split anymore.
+Membership dues (§11.5-11.6) is instead gated at runtime by
+`isTestEnvironment` (`POS/src/utils/environment.js`): the "Pay
+Membership Dues" button only renders on `localhost`/`127.0.0.1` and
+`uat.skullpos.shotty.tech`, and is invisible -- not just disabled -- on
+the real production domain. So testing it locally works regardless of
+which branch is checked out; it simply never appears once deployed to
+production, no matter the branch.
 
 ## Test environment setup
 
@@ -421,20 +424,63 @@ staff email/password or an ordinary cashier PIN must **not** reach
 gift-card option is reachable anywhere in the self-checkout UI.
 
 ### 11.3 Idle reset (90 seconds)
-**Steps:** Add items to the cart, then stop touching the screen for 90
+**Steps:** Add items to the cart, or start "Pay Membership Dues" and
+reach the info or confirm screen, then stop touching the screen for 90
 seconds.
 **Expected:** The screen resets back to the empty shop view on its own
--- an abandoned cart doesn't sit there waiting for the next customer.
+-- an abandoned cart or an abandoned membership-dues attempt doesn't sit
+there waiting for the next customer.
 
-### 11.4 Manual "Email My Receipt"
+### 11.4 Manual "Email My Receipt" after a regular purchase
 **Steps:** Complete a normal item purchase at self-checkout.
 **Expected:** The success screen offers an email field for the
 receipt; entering an address and submitting sends it (confirm delivery
 via Resend's log or the inbox).
 
-Membership dues (a second, card-only payment flow reachable from an
-empty cart) is `uat`-only right now -- see that branch's copy of this
-document for its test steps.
+### 11.5 Pay Membership Dues
+**Steps:** With an empty cart (the button only shows when the cart is
+empty), tap "Pay Membership Dues" in the top bar, enter a name and a
+validly-formatted email, continue to the confirm screen (shows
+"$40.00/month" plus the entered name/email), then pay with a real test
+card.
+**Expected:**
+- Continuing off the info screen is blocked until both a name and a
+  validly-formatted email are entered.
+- On success, a distinct "Membership dues paid!" screen shows -- not the
+  regular item-purchase success screen -- and the member's receipt is
+  emailed **automatically**, with no manual button (unlike 11.4).
+- A finance notification email also sends automatically. **In a
+  `testing:true` transaction this goes to the test recipient
+  (`everett.bazzocchi@skullspace.ca`), never `finance@skullspace.ca` --
+  only a genuinely non-testing transaction notifies finance@, so do not
+  create one just to check this by hand.**
+- The transaction is tagged `channel: "membership"` (check via
+  Transactions view or the DB), distinct from `pos`/`self_checkout`.
+
+### 11.6 Membership dues isolated in Sales Report
+**Steps:** After 11.5, open Sales Report (staff) and toggle the channel
+filter to "Membership".
+**Expected:** The $40.00 payment shows under "Membership" but not under
+"POS" or "Self-Checkout".
+
+### 11.7 Membership dues is invisible on the real production domain
+**Steps:** Load the app on the actual production URL (not `localhost`
+or `uat.skullpos.shotty.tech`) and open self-checkout with an empty
+cart.
+**Expected:** No "Pay Membership Dues" button anywhere -- confirms
+`isTestEnvironment` (`POS/src/utils/environment.js`) is correctly
+gating it off in production, not just hiding it in this dev/uat pass.
+
+### 11.8 Cart shown on the physical reader
+**Steps:** At self-checkout, add a couple of items and watch the
+reader's own screen (not the kiosk's). Then start "Pay Membership
+Dues" and reach the confirm screen.
+**Expected:** The reader displays the current cart's line items and
+total as items are added/removed, matching what `pos.js` already does
+for the staff register. During the membership-dues confirm step, the
+reader shows a single "Membership Dues" line item for $40.00 instead
+of the shop cart. Clearing the cart (or backing out of the membership
+flow) clears the reader's display too.
 
 ---
 
