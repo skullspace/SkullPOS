@@ -58,7 +58,7 @@ export function useStripe() {
 			if (test) {
 				config = {
 					simulated: false,
-					location: "tml_GO9HoQxw7phAmY",
+					location: "tml_GpVKASnj7AGqjn",
 				};
 			} else {
 				config = {
