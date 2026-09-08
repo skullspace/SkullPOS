@@ -303,14 +303,22 @@ const SelfCheckout = () => {
 	useEffect(() => {
 		if (selectedTerminal || terminals.length === 0) return;
 		const saved = localStorage.getItem(TERMINAL_STORAGE_KEY);
-		if (saved && terminals.some((r) => r.id === saved)) {
-			setSelectedTerminal(saved);
+		const match = saved && terminals.find((r) => r.id === saved);
+		if (match) {
+			setSelectedTerminal(match);
 		}
 	}, [terminals, selectedTerminal]);
 
+	// setSelectedTerminal (shared with the staff POS view via useStripe)
+	// must hold the actual reader object connectReader() expects -- not
+	// just its id -- so this looks the full object up by id rather than
+	// storing the id directly. Only the id itself is what's safe/useful to
+	// persist in localStorage for the kiosk's auto-reconnect above.
 	function selectTerminal(id) {
+		const match = terminals.find((r) => r.id === id);
+		if (!match) return;
 		localStorage.setItem(TERMINAL_STORAGE_KEY, id);
-		setSelectedTerminal(id);
+		setSelectedTerminal(match);
 	}
 
 	// Idle-reset: an unattended kiosk has no cashier to notice an abandoned
@@ -432,7 +440,7 @@ const SelfCheckout = () => {
 					<Select
 						labelId="kiosk-terminal-label"
 						label="Card Reader"
-						value={selectedTerminal || ""}
+						value={selectedTerminal?.id || ""}
 						onChange={(e) => selectTerminal(e.target.value)}
 					>
 						{terminals.map((r) => (
