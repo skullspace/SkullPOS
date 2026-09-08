@@ -6,17 +6,19 @@ refunds, real email delivery, and cross-view behavior that unit tests
 can't see. Everything else (payment math, idempotency, staff/PIN
 authorization, per-leg aggregation) is covered by the automated suites:
 - `AppwriteFunctions`: `npx jest` (127 tests, all 10 deployed functions)
-- `POS`: `npm test` (91 tests on `uat`; `main` is the same minus the
-  membership-dues suite -- see §11.5's note)
+- `POS`: `npm test` (91 tests)
 
 Run those first. This document is for what they can't reach.
 
-This document describes `uat` (`uat.skullpos.shotty.tech`), which has
-every feature below. `main` (production) currently has everything
-**except** the membership-dues payment flow (§11.5-11.6) -- that was
-deliberately held back from production; skip those two sections when
-testing against production and expect self-checkout's "Pay Membership
-Dues" button to simply not be there.
+`main` and `uat` now share identical code for every feature below,
+including membership dues -- there's no branch-level split anymore.
+Membership dues (§11.5-11.6) is instead gated at runtime by
+`isTestEnvironment` (`POS/src/utils/environment.js`): the "Pay
+Membership Dues" button only renders on `localhost`/`127.0.0.1` and
+`uat.skullpos.shotty.tech`, and is invisible -- not just disabled -- on
+the real production domain. So testing it locally works regardless of
+which branch is checked out; it simply never appears once deployed to
+production, no matter the branch.
 
 ## Test environment setup
 
@@ -116,7 +118,7 @@ display board too -- confirm both halves actually happen (register tile
 grays out immediately, and the MEnu app stops showing it).
 Note: an item with `enabled_pos: false` (a brand-new, not-yet-configured
 item) doesn't render as a tile at all, so it can't be long-pressed here --
-see §14 (Manage Items) for making a new item reachable in the first
+see §13 (Manage Items) for making a new item reachable in the first
 place.
 
 ---
@@ -461,6 +463,25 @@ filter to "Membership".
 **Expected:** The $40.00 payment shows under "Membership" but not under
 "POS" or "Self-Checkout".
 
+### 11.7 Membership dues is invisible on the real production domain
+**Steps:** Load the app on the actual production URL (not `localhost`
+or `uat.skullpos.shotty.tech`) and open self-checkout with an empty
+cart.
+**Expected:** No "Pay Membership Dues" button anywhere -- confirms
+`isTestEnvironment` (`POS/src/utils/environment.js`) is correctly
+gating it off in production, not just hiding it in this dev/uat pass.
+
+### 11.8 Cart shown on the physical reader
+**Steps:** At self-checkout, add a couple of items and watch the
+reader's own screen (not the kiosk's). Then start "Pay Membership
+Dues" and reach the confirm screen.
+**Expected:** The reader displays the current cart's line items and
+total as items are added/removed, matching what `pos.js` already does
+for the staff register. During the membership-dues confirm step, the
+reader shows a single "Membership Dues" line item for $40.00 instead
+of the shop cart. Clearing the cart (or backing out of the membership
+flow) clears the reader's display too.
+
 ---
 
 ## 12. Email Receipts
@@ -473,7 +494,7 @@ available even in PIN-restricted mode, unlike Refund. Entering an
 email and confirming sends a receipt (confirm delivery).
 
 ### 12.2 Self-checkout manual receipt
-See 11.4 (regular purchases only -- membership dues auto-sends, see 11.5).
+See §11.4.
 
 ### 12.3 Receipt content sanity check
 **Steps:** Open a received receipt email.
@@ -482,39 +503,9 @@ SkullPOS receipt rather than a raw/blank template.
 
 ---
 
-## 13. Password Recovery
+## 13. Manage Items
 
-### 13.1 Request a reset
-**Steps:** From the login screen, click "Forgot Password?", enter a
-staff account's email.
-**Expected:** A generic "if that email has an account, a reset link
-has been sent" message shows regardless of whether the address is
-real (no account enumeration). A real email arrives if the account
-exists.
-
-### 13.2 Complete a reset
-**Steps:** Open the emailed link (lands on `/recovery?userId=...&secret=...`),
-enter a new password (8+ characters) and a matching confirmation,
-submit.
-**Expected:** Success message, "Back to Login" returns to `/login`.
-The new password actually works on a subsequent login; the old one no
-longer does.
-
-### 13.3 Invalid or already-used link
-**Steps:** Reuse a recovery link that already completed a reset once,
-or edit its `secret` query param to something invalid.
-**Expected:** A clear error message, not a crash or a silent no-op.
-
-### 13.4 Missing query params
-**Steps:** Navigate to `/recovery` directly with no query string.
-**Expected:** A clear "this link is missing information" message, no
-crash.
-
----
-
-## 14. Manage Items
-
-### 14.1 Reachability is staff-login-only
+### 13.1 Reachability is staff-login-only
 **Steps:** Log in as staff via email/password, open the hamburger
 menu. Separately, log in via **any** quick-access PIN (including the
 one labeled "Staff") and open the same menu.
@@ -524,7 +515,7 @@ for every PIN login -- catalog management is deliberately staff-login
 only, not reachable from a quick-access PIN even when that PIN is
 labeled "Staff".
 
-### 14.2 Making a brand-new item sellable
+### 13.2 Making a brand-new item sellable
 **Steps:** Create a new item directly in the Appwrite console (or use
 one just added) -- it defaults to invisible everywhere, since it won't
 appear anywhere in the register grid yet. Open Manage Items, search
@@ -534,15 +525,45 @@ the main POS screen without a page reload. This is the in-app path
 that didn't exist before this feature (previously required editing the
 item directly in the Appwrite console).
 
-### 14.3 Customer-menu toggle
+### 13.3 Customer-menu toggle
 **Steps:** In Manage Items, toggle "On Customer Menu" for an item.
 **Expected:** Reflected in the MEnu customer-facing display app (a
 separate app -- confirm it actually picks up the change on its own
 refresh cycle).
 
-### 14.4 Search filter
+### 13.4 Search filter
 **Steps:** Type a partial item name into the search box.
 **Expected:** The list filters live, case-insensitively.
+
+---
+
+## 14. Password Recovery
+
+### 14.1 Request a reset
+**Steps:** From the login screen, click "Forgot Password?", enter a
+staff account's email.
+**Expected:** A generic "if that email has an account, a reset link
+has been sent" message shows regardless of whether the address is
+real (no account enumeration). A real email arrives if the account
+exists.
+
+### 14.2 Complete a reset
+**Steps:** Open the emailed link (lands on `/recovery?userId=...&secret=...`),
+enter a new password (8+ characters) and a matching confirmation,
+submit.
+**Expected:** Success message, "Back to Login" returns to `/login`.
+The new password actually works on a subsequent login; the old one no
+longer does.
+
+### 14.3 Invalid or already-used link
+**Steps:** Reuse a recovery link that already completed a reset once,
+or edit its `secret` query param to something invalid.
+**Expected:** A clear error message, not a crash or a silent no-op.
+
+### 14.4 Missing query params
+**Steps:** Navigate to `/recovery` directly with no query string.
+**Expected:** A clear "this link is missing information" message, no
+crash.
 
 ---
 
