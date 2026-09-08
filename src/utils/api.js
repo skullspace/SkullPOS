@@ -285,6 +285,14 @@ export function useAppwrite() {
 				password,
 			});
 			console.log("login success", newLoging);
+			// A stale PIN-mode flag from an earlier kiosk/PIN session on this
+			// same browser (one that ended some way other than the app's own
+			// Logout -- session expiry, closing the tab, clearing cookies)
+			// would otherwise survive into this real staff session and
+			// silently restrict it (24h Sales Report cap, no refunds) even
+			// though this is a genuine, unrestricted login.
+			clearPinMode();
+			setPinModeState(null);
 			return newLoging;
 		},
 		[account],
