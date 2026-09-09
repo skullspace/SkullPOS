@@ -624,13 +624,10 @@ refresh cycle).
   `enabled_pos` only) actually rejects any other field name -- protects
   against the client gaining effective write access to arbitrary
   `pos_items` fields through this endpoint.
-- [ ] **Known gap, not yet closed:** a POS-team Google login has its
-  refund button hidden client-side (§1.2), but `Stripe-RefundPayment`'s
-  actual execute-permission still lists all three original
-  `STAFF_TEAM_IDS` teams (admin + both POS teams), predating the
-  admin/POS split -- so a POS-team member could still perform a refund
-  by calling that function directly, bypassing the hidden button. Only
-  `Sales-Report`'s 24h-cap check was hardened to the same admin-only
-  split (§7.5); refunds were explicitly left out of that pass. Decide
-  whether to also narrow that function's execute permission to
-  admin-only, or accept POS-team refund access as intentional.
+- [x] `Stripe-RefundPayment`'s execute-permission narrowed from all
+  three original `STAFF_TEAM_IDS` teams to admin-only, matching
+  `Sales-Report`'s 24h-cap split (§7.5) -- a POS-team Google login's
+  hidden refund button (§1.2) is now backed by an actual server-side
+  restriction, not just hidden client-side. Confirm a POS-team member
+  calling that function directly gets rejected, not just the button
+  being absent from the UI.
