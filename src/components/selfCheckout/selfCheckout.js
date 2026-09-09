@@ -8,7 +8,11 @@
  * not just a hidden one. Payment is card-only (single card, no cash/
  * gift card/split), items add by tapping the grid or scanning a barcode,
  * and alcohol/age-restricted items never appear (see
- * selfCheckoutCategory.js).
+ * selfCheckoutCategory.js). components/pos/cartItem.js IS reused directly
+ * (unlike the above) -- it's a pure cart-line presentational component
+ * with no refund/reporting logic of its own, so reusing it here just
+ * keeps the cart line's look and +/- behavior identical to the staff
+ * register's, not a back door into anything restricted.
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -35,6 +39,7 @@ import { emailReceipt } from "../../utils/receipt";
 import { formatCAD } from "../../utils/format";
 import { isTestEnvironment } from "../../utils/environment";
 import SelfCheckoutCategory from "./selfCheckoutCategory";
+import CartItem from "../pos/cartItem";
 
 // After this long with no tap/scan, an abandoned cart is cleared so the
 // next customer doesn't inherit a stranger's half-built order.
@@ -713,38 +718,46 @@ const SelfCheckout = () => {
 					Your Order
 				</Typography>
 				<Box sx={{ flex: 1, overflow: "auto" }}>
-					{cart.length === 0 && <Typography color="text.secondary">Tap an item or scan a barcode to begin.</Typography>}
-					{cart.map((item) => (
-						<Box key={item.$id} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
-							<Box>
-								<Typography variant="body2">
-									{item.quantity}x {item.name}
-								</Typography>
-								<Typography variant="caption" color="text.secondary">
-									{formatCAD(item.price * item.quantity)}
-								</Typography>
-							</Box>
-							<IconButton size="small" onClick={() => removeItemFromCart(item.$id, true)}>
-								<DeleteIcon fontSize="small" />
-							</IconButton>
-						</Box>
-					))}
+					{cart.length === 0 ? (
+						<Typography color="text.secondary">Tap an item or scan a barcode to begin.</Typography>
+					) : (
+						cart.map((item) => (
+							<CartItem
+								key={item.$id}
+								cartItem={item}
+								onRemove={removeItemFromCart}
+								onIncrement={addItemToCart}
+								onDecrement={removeItemFromCart}
+							/>
+						))
+					)}
 				</Box>
 				<Typography variant="h5" sx={{ display: "flex", justifyContent: "space-between", my: 2 }}>
 					<span>Total</span>
 					<span>{formatCAD(total)}</span>
 				</Typography>
-				<Button
-					variant="contained"
-					size="large"
-					disabled={cart.length === 0}
-					onClick={() => {
-						lastPurchaseWasMembership.current = false;
-						checkout();
-					}}
-				>
-					Pay {formatCAD(total)}
-				</Button>
+				<Box sx={{ display: "grid", gridTemplateColumns: "3fr 1fr", gap: 0.5 }}>
+					<Button
+						variant="contained"
+						size="large"
+						disabled={cart.length === 0}
+						onClick={() => {
+							lastPurchaseWasMembership.current = false;
+							checkout();
+						}}
+					>
+						Pay {formatCAD(total)}
+					</Button>
+					<IconButton
+						variant="contained"
+						color="secondary"
+						onClick={clearCart}
+						aria-label="Clear cart"
+						disabled={cart.length === 0}
+					>
+						<DeleteIcon fontSize="small" />
+					</IconButton>
+				</Box>
 			</Box>
 		</Box>
 	);

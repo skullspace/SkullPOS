@@ -22,7 +22,7 @@ const SelfCheckoutCategory = ({ category, items, onAdd, cartQuantities }) => {
 	return (
 		<Box key={category.$id} id={`category-${category.$id}`} sx={{ mb: 2, mx: 2.5, fontSize: ".75em", scrollMarginTop: "140px" }}>
 			<h2>{category.name}</h2>
-			<Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 1 }}>
+			<Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 1 }}>
 				{categoryItems.map((item) => (
 					<SelfCheckoutItem
 						key={item.$id}
