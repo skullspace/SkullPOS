@@ -3,7 +3,7 @@
  *
  * A verified PIN signs the device into a restricted "cashier mode"
  * (see App.js's RequireAuth and utils/pin.js) -- no refunds, sales reports
- * capped to 24 hours -- without needing an email/password login.
+ * capped to 24 hours -- without needing a Google SSO login.
  */
 
 import React, { useEffect, useState } from "react";

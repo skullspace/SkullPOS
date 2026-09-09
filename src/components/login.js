@@ -1,86 +1,31 @@
 /**
- * Login.js - User authentication component
- * 
- * Allows users to authenticate with their Appwrite account using email and password.
- * Features:
- * - Email/password input validation
- * - Error handling and display
- * - Quick-access PIN entry for a restricted cashier session
- * - Automatic redirect to POS after successful login
+ * Login.js - Staff authentication entry point
+ *
+ * Staff sign in with their Skullspace Google Workspace account (Google
+ * SSO) -- there is no email/password option anymore. Non-staff cashiers
+ * and the self-checkout kiosk still use the separate quick-access PIN
+ * flow below, unaffected by this.
  */
 
-import React, { useState } from "react";
+import React from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAppwrite } from "../utils/api";
-import { useNavigate } from "react-router-dom";
 import AuthForm from "./auth/AuthForm";
 import PinEntryDialog from "./PinEntryDialog";
-import ForgotPasswordDialog from "./ForgotPasswordDialog";
 
-/**
- * Login component
- * 
- * @returns {JSX.Element} Login form with email and password fields
- */
 const Login = () => {
-	const { login } = useAppwrite();
-	const navigate = useNavigate();
+	const { loginWithGoogle } = useAppwrite();
+	const [pinDialogOpen, setPinDialogOpen] = React.useState(false);
+	const [searchParams] = useSearchParams();
 
-	// Form state
-	const [formValues, setFormValues] = useState({
-		email: "",
-		password: "",
-	});
-	const [errorMessage, setErrorMessage] = useState("");
-	const [pinDialogOpen, setPinDialogOpen] = useState(false);
-	const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+	const errorMessage =
+		searchParams.get("error") === "oauth_failed"
+			? "Google sign-in failed -- please try again."
+			: searchParams.get("error") === "domain"
+				? "That Google account isn't a Skullspace account."
+				: "";
 
-	/**
-	 * Handle field value changes
-	 * 
-	 * @param {string} fieldName - Name of field being updated
-	 * @param {string} value - New field value
-	 */
-	const handleFieldChange = (fieldName, value) => {
-		setFormValues((prev) => ({
-			...prev,
-			[fieldName]: value,
-		}));
-	};
-
-	/**
-	 * Handle login form submission
-	 * Attempts to authenticate user and redirects to POS on success
-	 * 
-	 * @param {Event} e - Form submission event
-	 */
-	const handleLogin = async (e) => {
-		e.preventDefault();
-		try {
-			await login(formValues.email, formValues.password);
-			setErrorMessage("");
-			navigate("/pos");
-		} catch (err) {
-			console.error("Login error:", err);
-			setErrorMessage(err.message || "Login failed");
-		}
-	};
-
-	// Form field configuration
-	const loginFields = [
-		{ name: "email", label: "Email", type: "email" },
-		{ name: "password", label: "Password", type: "password" },
-	];
-
-	// Secondary actions -- self-registration was removed: it only checked
-	// that the email string ended in "@skullspace.ca" (no real verification
-	// of ownership), so it was effectively as open as anonymous access.
-	// Staff accounts are created by an admin directly in the Appwrite
-	// console and added to a team; everyone else uses the PIN below.
 	const secondaryActions = [
-		{
-			label: "Forgot Password?",
-			onClick: () => setForgotPasswordOpen(true),
-		},
 		{
 			label: "Quick Access PIN",
 			onClick: () => setPinDialogOpen(true),
@@ -91,16 +36,18 @@ const Login = () => {
 		<>
 			<AuthForm
 				title="Login"
-				fields={loginFields}
-				values={formValues}
-				onFieldChange={handleFieldChange}
+				fields={[]}
+				values={{}}
+				onFieldChange={() => {}}
 				errorMessage={errorMessage}
-				onSubmit={handleLogin}
-				submitButtonLabel="Login"
+				onSubmit={(e) => {
+					e.preventDefault();
+					loginWithGoogle();
+				}}
+				submitButtonLabel="Sign in with Google"
 				secondaryActions={secondaryActions}
 			/>
 			<PinEntryDialog open={pinDialogOpen} onClose={() => setPinDialogOpen(false)} />
-			<ForgotPasswordDialog open={forgotPasswordOpen} onClose={() => setForgotPasswordOpen(false)} />
 		</>
 	);
 };

@@ -1,6 +1,6 @@
 /**
  * pin.js - Quick-access PIN mode for cashiers and self-checkout kiosks who
- * shouldn't need a full email/password login. A verified PIN grants an
+ * shouldn't need a full Google SSO login. A verified PIN grants an
  * anonymous session in one of two restricted modes -- see App.js's
  * RequireAuth/RequireSelfCheckoutAuth:
  *   - cashier mode (selfCheckout: false/absent): no refunds, sales reports
