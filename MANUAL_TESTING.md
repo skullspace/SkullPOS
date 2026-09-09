@@ -5,7 +5,7 @@ real Stripe Terminal hardware, physical PIN entry, actual card charges/
 refunds, real email delivery, and cross-view behavior that unit tests
 can't see. Everything else (payment math, idempotency, staff/PIN
 authorization, per-leg aggregation) is covered by the automated suites:
-- `AppwriteFunctions`: `npx jest` (127 tests, all 10 deployed functions)
+- `AppwriteFunctions`: `npx jest` (128 tests, all 10 deployed functions)
 - `POS`: `npm test` (91 tests)
 
 Run those first. This document is for what they can't reach.
@@ -31,54 +31,107 @@ production, no matter the branch.
 - Have at least one test gift card with a known balance (e.g. $10.00)
   that you're allowed to drain/reset, plus its UPC/barcode for scanning
   tests.
-- Know one staff-team login (email/password) and one quick-access PIN
-  for a non-staff cashier.
+- Know one Google account in the `admin` team, one in a `POS` team,
+  and one quick-access PIN for a non-staff cashier -- §1 below needs
+  all three to exercise each access tier.
 
 ---
 
 ## 1. Authentication & Sessions
 
-### 1.1 Email/password login (staff)
-**Steps:** Go to the login page, sign in with a staff email/password.
-**Expected:** Lands on the POS screen. Hamburger menu shows Sales
-Report and Transactions with no time restriction (verified in §6).
+Staff sign in via Google SSO (the Skullspace Google Workspace account)
+-- there's no email/password login anymore. What a successful sign-in
+actually lands on depends on Appwrite team membership, checked via
+`teams.list()` right after the OAuth redirect completes:
 
-### 1.2 Quick-access PIN login
+| Team membership | Lands on | Restriction |
+|---|---|---|
+| `admin` | `/pos` | none -- full access |
+| `POS` (either team) | `/pos` | same as a PIN cashier (24h Sales Report cap, no comparison deltas, no refunds) |
+| no recognized team | `/self-checkout` | same as a kiosk PIN |
+
+Non-`@skullspace.ca` Google accounts are rejected outright regardless
+of team membership (Google's own OAuth flow has no way to restrict
+this to the Workspace at the consent-screen level, so it's enforced
+after the fact).
+
+### 1.1 Google SSO -- admin tier
+**Steps:** From the login screen, click "Sign in with Google", complete
+the flow with an account that's a member of the **admin** Appwrite
+team.
+**Expected:** Lands on `/pos`. Hamburger menu shows Sales Report and
+Transactions with no time restriction (verified in §7).
+
+### 1.2 Google SSO -- POS tier
+**Steps:** Sign in with a Google account that's a member of a **POS**
+team but not admin.
+**Expected:** Lands on `/pos`, but restricted exactly like a PIN
+cashier -- Sales Report capped to 24h with no comparison deltas (§7.3-
+7.4), refund button not shown. This is enforced server-side too for
+the Sales Report cap (§7.5), not just hidden in the client.
+
+### 1.3 Google SSO -- no recognized team
+**Steps:** Sign in with a `@skullspace.ca` Google account that isn't a
+member of admin or either POS team.
+**Expected:** Redirected straight to `/self-checkout`, never `/pos`.
+Manually typing `/pos` afterward redirects back to `/self-checkout`
+rather than granting staff access.
+
+### 1.4 Google SSO -- non-Skullspace account rejected
+**Steps:** Attempt to sign in with a Google account outside
+`@skullspace.ca`, if you have one available to test with.
+**Expected:** Immediately logged back out to `/login` with a message
+that the account isn't a Skullspace account -- never reaches `/pos` or
+`/self-checkout` even momentarily.
+
+### 1.5 A stale PIN-mode flag doesn't leak into a Google login
+**Steps:** Log in via PIN on a browser, then -- **without** clicking
+Logout (e.g. just close the tab or clear cookies) -- sign back in via
+Google SSO with an admin account on that same browser.
+**Expected:** Full, unrestricted admin access -- not incorrectly capped
+as if still in PIN mode. (This was a real bug earlier: a leftover PIN-
+mode flag in `localStorage` silently restricted a genuine staff login
+on the same browser until `login`/the Google SSO equivalent started
+clearing it.)
+
+### 1.6 Quick-access PIN login
 **Steps:** From the login screen, choose "Quick Access PIN", enter a
 valid PIN.
 **Expected:** Lands on the POS screen as that PIN's labeled cashier
 (check the label shown matches the PIN's configured name). Sales
-Report is capped to the last 24 hours (§6.2) and refunds are
+Report is capped to the last 24 hours (§7.3) and refunds are
 unavailable if PIN-mode isn't authorized for them (check current
 behavior matches intent).
 
-### 1.3 Wrong PIN
+### 1.7 Wrong PIN
 **Steps:** Enter an incorrect PIN.
 **Expected:** Generic rejection message. Does **not** reveal whether
 the PIN exists, is inactive, or is just wrong -- message text should be
 identical in all three cases.
 
-### 1.4 Self-registration removed
+### 1.8 Self-registration removed
 **Steps:** Manually navigate to `/register` (typed URL or an old
 bookmark).
 **Expected:** Redirected to `/login`. No registration form is
 reachable by any path. The login page shows no "Register" link/button
--- only "Quick Access PIN" as the secondary action.
+-- only "Sign in with Google" and "Quick Access PIN".
 
-### 1.5 Logout
-**Steps:** Log in (either method), then use the hamburger menu's
-Logout.
+### 1.9 Logout
+**Steps:** Log in (any method), then use the hamburger menu's Logout.
 **Expected:** Returns to the login screen. PIN-mode flag is cleared
 (confirm by checking that a fresh PIN login afterward doesn't
 silently reuse the old label). Reloading the app afterward does not
 restore the previous session.
 
-### 1.6 Session survives a reload, PIN mode does not leak across tabs unexpectedly
+### 1.10 Session survives a reload, PIN mode persists across tabs and restarts
 **Steps:** Log in via PIN in one tab; open the app fresh in a second
-tab.
-**Expected:** Confirm actual behavior matches intent for your
-deployment (PIN mode is sessionStorage-backed, so it's per-tab by
-design) -- note if this surprises staff in practice.
+tab, and separately try closing and reopening the browser entirely.
+**Expected:** The second tab picks up the same PIN-mode label without
+re-entering the PIN, and it survives a full browser restart too --
+`pinMode` is `localStorage`-backed specifically so a kiosk doesn't
+have to re-enter its PIN after an overnight power-cycle. Note if this
+surprises staff in practice (e.g. a cashier expecting each tab/session
+to need its own PIN).
 
 ---
 
@@ -304,35 +357,50 @@ clearly flagged for manual follow-up -- not silently swallowed.
 
 ## 7. Sales Report
 
-### 7.1 Staff: full range + comparison deltas
-**Steps:** Log in as staff, open Sales Report, pick a bounded date
-range (e.g. "yesterday").
+### 7.1 Admin: full range + comparison deltas
+**Steps:** Log in via Google SSO with an account in the **admin** team,
+open Sales Report, pick a bounded date range (e.g. "yesterday").
 **Expected:** Stat cards (Sale Volume, Alcohol, Food, Non-Alcoholic,
 Other) each show a delta against the immediately-preceding period of
 equal length. Sanity-check the delta math against two ranges you can
 compute by hand from a handful of known test sales.
 
-### 7.2 Staff: "All Time"
+### 7.2 Admin: "All Time"
 **Steps:** Select the "All Time" option (no bounded start date).
 **Expected:** Report loads normally but shows **no** comparison delta
 (there's no equal-length prior period to compare against) -- confirm
 the UI degrades gracefully (no blank/NaN deltas).
 
-### 7.3 PIN-mode: 24-hour cap enforced
-**Steps:** Log in via PIN, open Sales Report, try to request a range
-older than 24 hours (e.g. last week).
-**Expected:** The report silently clamps to the last 24 hours rather
-than erroring -- confirm the numbers shown genuinely only cover the
-last day (cross-check against a known older test sale that should be
-excluded).
+### 7.3 24-hour cap enforced for PIN-mode and POS-team logins alike
+**Steps:** Try each of: a quick-access PIN cashier, and a Google SSO
+login whose account is in a **POS** team but not admin. In each, open
+Sales Report and try to request a range older than 24 hours (e.g. last
+week).
+**Expected:** Both silently clamp to the last 24 hours rather than
+erroring -- confirm the numbers shown genuinely only cover the last
+day (cross-check against a known older test sale that should be
+excluded). A POS-team Google login is restricted exactly the same as a
+PIN cashier here, not treated as staff.
 
-### 7.4 PIN-mode never gets comparison deltas
-**Steps:** As a PIN-mode cashier, check the stat cards.
-**Expected:** No delta/comparison numbers are shown at all, even though
-staff viewing the same day would see them -- this is intentional
-(prevents leaking older aggregate data through a delta).
+### 7.4 Neither restricted mode gets comparison deltas
+**Steps:** As a PIN-mode cashier, and separately as a POS-team (non-
+admin) Google login, check the stat cards.
+**Expected:** No delta/comparison numbers are shown at all in either
+case, even though an admin viewing the same day would see them -- this
+is intentional (prevents leaking older aggregate data through a
+delta).
 
-### 7.5 Category & COGS sanity check
+### 7.5 The 24h cap is enforced server-side, not just hidden in the UI
+**Steps:** As a POS-team (non-admin) Google login, try to force a
+wider range some other way than the date picker if you can (e.g.
+replaying the Sales-Report function's own request with a modified
+`startDate`, if you have a way to do that).
+**Expected:** Still clamped to 24h -- `Sales-Report`'s own `isAdmin()`
+check (not the client) is what actually enforces this, so it can't be
+bypassed by skipping the UI. `restricted: true` in the response is the
+tell.
+
+### 7.6 Category & COGS sanity check
 **Steps:** Ring a known alcoholic item, a known "Food"-category item,
 and an item with ingredient-based COGS configured.
 **Expected:** Alcohol amount bucket, Food amount bucket, and COGS
@@ -537,37 +605,7 @@ refresh cycle).
 
 ---
 
-## 14. Password Recovery
-
-### 14.1 Request a reset
-**Steps:** From the login screen, click "Forgot Password?", enter a
-staff account's email.
-**Expected:** A generic "if that email has an account, a reset link
-has been sent" message shows regardless of whether the address is
-real (no account enumeration). A real email arrives if the account
-exists.
-
-### 14.2 Complete a reset
-**Steps:** Open the emailed link (lands on `/recovery?userId=...&secret=...`),
-enter a new password (8+ characters) and a matching confirmation,
-submit.
-**Expected:** Success message, "Back to Login" returns to `/login`.
-The new password actually works on a subsequent login; the old one no
-longer does.
-
-### 14.3 Invalid or already-used link
-**Steps:** Reuse a recovery link that already completed a reset once,
-or edit its `secret` query param to something invalid.
-**Expected:** A clear error message, not a crash or a silent no-op.
-
-### 14.4 Missing query params
-**Steps:** Navigate to `/recovery` directly with no query string.
-**Expected:** A clear "this link is missing information" message, no
-crash.
-
----
-
-## 15. Regression checks specific to this session's changes
+## 14. Regression checks specific to this session's changes
 
 - [ ] A transaction created **before** the split-payment migration
   (no `payments` field, only legacy `stripe_id`/`giftcard_amount`
@@ -586,3 +624,13 @@ crash.
   `enabled_pos` only) actually rejects any other field name -- protects
   against the client gaining effective write access to arbitrary
   `pos_items` fields through this endpoint.
+- [ ] **Known gap, not yet closed:** a POS-team Google login has its
+  refund button hidden client-side (§1.2), but `Stripe-RefundPayment`'s
+  actual execute-permission still lists all three original
+  `STAFF_TEAM_IDS` teams (admin + both POS teams), predating the
+  admin/POS split -- so a POS-team member could still perform a refund
+  by calling that function directly, bypassing the hidden button. Only
+  `Sales-Report`'s 24h-cap check was hardened to the same admin-only
+  split (§7.5); refunds were explicitly left out of that pass. Decide
+  whether to also narrow that function's execute permission to
+  admin-only, or accept POS-team refund access as intentional.
