@@ -23,15 +23,15 @@ const SelfCheckoutItem = ({ item, onAdd, quantityInCart = 0 }) => {
 			sx={{
 				width: "100%",
 				aspectRatio: "1",
-				borderRadius: "10px",
-				p: 1.25,
+				borderRadius: "8px",
+				p: 0.85,
 				textTransform: "none",
 				display: "flex",
 				flexDirection: "column",
 				justifyContent: "space-between",
 				alignItems: "stretch",
 				overflow: "hidden",
-				gap: 0.2,
+				gap: 0.15,
 				boxShadow: (theme) => theme?.shadows?.[1] ?? "0 2px 6px rgba(255, 255, 255, 0.12)",
 				transition: "transform 120ms ease, box-shadow 120ms ease",
 				position: "relative",
@@ -68,17 +68,17 @@ const SelfCheckoutItem = ({ item, onAdd, quantityInCart = 0 }) => {
 				<Box
 					sx={{
 						position: "absolute",
-						top: 6,
-						right: 6,
+						top: 4,
+						right: 4,
 						zIndex: 3,
-						minWidth: 22,
-						height: 22,
-						borderRadius: "11px",
-						px: 0.75,
+						minWidth: 18,
+						height: 18,
+						borderRadius: "9px",
+						px: 0.5,
 						display: "flex",
 						alignItems: "center",
 						justifyContent: "center",
-						fontSize: "0.85rem",
+						fontSize: "0.7rem",
 						fontWeight: 700,
 						color: "primary.contrastText",
 						backgroundColor: "secondary.main",
@@ -92,12 +92,12 @@ const SelfCheckoutItem = ({ item, onAdd, quantityInCart = 0 }) => {
 				<Typography
 					variant="h6"
 					sx={{
-						fontSize: "1.6rem",
+						fontSize: "1.05rem",
 						fontWeight: 600,
 						lineHeight: 1.05,
 						wordBreak: "break-word",
 						overflowWrap: "anywhere",
-						mb: 0.25,
+						mb: 0.15,
 						textShadow: "0 1px 3px rgba(0,0,0,0.9)",
 					}}
 				>
@@ -113,11 +113,11 @@ const SelfCheckoutItem = ({ item, onAdd, quantityInCart = 0 }) => {
 					variant="body2"
 					sx={{
 						color: "text.secondary",
-						fontSize: "0.8rem",
+						fontSize: "0.65rem",
 						lineHeight: 1.12,
 						wordBreak: "break-word",
 						overflowWrap: "anywhere",
-						mb: 0.75,
+						mb: 0.5,
 						textShadow: "0 1px 2px rgba(0,0,0,0.9)",
 					}}
 				>
@@ -129,7 +129,7 @@ const SelfCheckoutItem = ({ item, onAdd, quantityInCart = 0 }) => {
 						label={formatCAD(item.price)}
 						color="default"
 						size="small"
-						sx={{ fontWeight: 600, height: "24px", fontSize: "1.25rem" }}
+						sx={{ fontWeight: 600, height: "18px", fontSize: "0.85rem" }}
 					/>
 				</Box>
 			</Box>
