@@ -14,7 +14,7 @@
  *   - data database: contains configuration settings
  */
 
-import { Client as Appwrite, Databases, Account, ID, Functions, Query } from "appwrite";
+import { Client as Appwrite, Databases, Account, ID, Functions, Query, Teams } from "appwrite";
 
 import { useMemo, useState, useEffect, useCallback } from "react";
 import { verifyPin, getPinMode, setPinMode, clearPinMode } from "./pin";
@@ -125,6 +125,7 @@ export function useAppwrite() {
 	const client = useMemo(() => createClient(), []);
 	const databases = useMemo(() => new Databases(client), [client]);
 	const account = useMemo(() => new Account(client), [client]);
+	const teams = useMemo(() => new Teams(client), [client]);
 
 	/**
 	 * Fetch all product categories from database
@@ -392,6 +393,7 @@ export function useAppwrite() {
 		client,
 		databases,
 		account,
+		teams,
 		currentUser,
 		config,
 		categories,
