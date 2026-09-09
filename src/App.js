@@ -2,7 +2,7 @@
  * App.js - Main application component for SkullPOS
  *
  * SkullPOS is a Point of Sale system designed for Skull Space with features including:
- * - User authentication (email/password login, quick-access PIN)
+ * - User authentication (Google SSO for staff, quick-access PIN for cashiers/kiosks)
  * - Product catalog with categories
  * - Shopping cart with member discounts
  * - Multi-method payment processing (Stripe, Cash, Gift Cards)
@@ -10,11 +10,13 @@
  * - Sales reporting and analytics
  *
  * This component handles routing and the two auth guards below. There is
- * no self-registration route -- staff accounts are created by an admin
- * directly in the Appwrite console and added to a team.
+ * no self-registration route -- staff accounts sign in with their
+ * Skullspace Google Workspace account (see RequireAuth's domain check
+ * below), and non-staff cashiers/kiosks use a PIN instead.
  */
 
 import { useAppwrite } from "./utils/api";
+import { clearPinMode } from "./utils/pin";
 import { useEffect, useState } from "react";
 import { BrowserRouter as Router, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 
@@ -22,7 +24,6 @@ import { BrowserRouter as Router, Navigate, Route, Routes, useNavigate } from "r
 import Login from "./components/login";
 import POS from "./components/pos/pos";
 import SelfCheckout from "./components/selfCheckout/selfCheckout";
-import RecoveryPage from "./components/RecoveryPage";
 
 /**
  * Gate for the /pos route. Renders nothing until the session check
@@ -48,6 +49,22 @@ function RequireAuth({ children }) {
 				if (cancelled) return;
 
 				if (acct && acct.email) {
+					// Google SSO isn't restricted to the Workspace at the OAuth
+					// layer (Appwrite's client SDK doesn't expose Google's `hd`
+					// hosted-domain param), so any non-@skullspace.ca Google
+					// account that completed the OAuth flow is rejected here,
+					// the single choke point every /pos load passes through.
+					if (!acct.email.toLowerCase().endsWith("@skullspace.ca")) {
+						logout("domain");
+						return;
+					}
+					// A stale PIN-mode flag from an earlier kiosk/PIN session on
+					// this same browser (one that ended some way other than the
+					// app's own Logout) would otherwise survive into this real
+					// staff session and silently restrict it (24h Sales Report
+					// cap, no refunds) even though this is a genuine,
+					// unrestricted login.
+					clearPinMode();
 					setReady(true);
 					return;
 				}
@@ -84,7 +101,7 @@ function RequireAuth({ children }) {
 
 /**
  * Gate for the /self-checkout route. Only a PIN verified as
- * selfCheckout:true satisfies this -- a staff email/password session does
+ * selfCheckout:true satisfies this -- a staff Google SSO session does
  * NOT (a manager's real login opening the customer-facing kiosk screen
  * would be its own kind of mistake), and neither does an ordinary cashier
  * PIN.
@@ -199,8 +216,7 @@ export default function App() {
 				/>
 				{/* Catches a stale /register bookmark too, now that
 				self-registration has been removed. */}
-				<Route path="/recovery" element={<RecoveryPage />} />
-					<Route path="*" element={<Navigate to="/login" replace />} />
+				<Route path="*" element={<Navigate to="/login" replace />} />
 			</Routes>
 		</Router>
 	);

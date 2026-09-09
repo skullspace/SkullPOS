@@ -265,38 +265,22 @@ export function useAppwrite() {
 	}, [account]);
 
 	/**
-	 * User login with email and password
-	 * Creates an authenticated session
-	 * 
-	 * @param {string} email - User email address
-	 * @param {string} password - User password
-	 * @returns {Promise<Object>} Login response object
-	 * @throws {Error} If login fails or user already logged in
+	 * Staff login via Google SSO (the Skullspace Google Workspace account).
+	 * Full-page redirect through Appwrite's OAuth2 flow -- there's no
+	 * promise to await here, the browser navigates away to Google and
+	 * back. `success`/`failure` land back on this same app; App.js's
+	 * RequireAuth is what actually validates the returned session (checks
+	 * the email is a real @skullspace.ca account, not just any Google
+	 * account) and clears any stale PIN-mode flag, since that's the
+	 * single choke point every /pos load already passes through.
 	 */
-	const login = useCallback(
-		async (email, password) => {
-			try {
-				let login = await account.get();
-				console.log("already logged in", login);
-				throw new Error("Already logged in");
-			} catch (e) {}
-			let newLoging = await account.createEmailPasswordSession({
-				email,
-				password,
-			});
-			console.log("login success", newLoging);
-			// A stale PIN-mode flag from an earlier kiosk/PIN session on this
-			// same browser (one that ended some way other than the app's own
-			// Logout -- session expiry, closing the tab, clearing cookies)
-			// would otherwise survive into this real staff session and
-			// silently restrict it (24h Sales Report cap, no refunds) even
-			// though this is a genuine, unrestricted login.
-			clearPinMode();
-			setPinModeState(null);
-			return newLoging;
-		},
-		[account],
-	);
+	const loginWithGoogle = useCallback(() => {
+		account.createOAuth2Session({
+			provider: "google",
+			success: `${window.location.origin}/pos`,
+			failure: `${window.location.origin}/login?error=oauth_failed`,
+		});
+	}, [account]);
 
 	/**
 	 * Quick-access PIN login. Ensures an anonymous session exists first (so
@@ -339,12 +323,12 @@ export function useAppwrite() {
 	 * User logout
 	 * Deletes current session and redirects to login
 	 */
-	async function logout() {
+	async function logout(reason) {
 		try {
 			await account.deleteSession({ sessionId: "current" });
 			clearPinMode();
 			setPinModeState(null);
-			window.location.href = "/login";
+			window.location.href = reason ? `/login?error=${reason}` : "/login";
 		} catch (err) {
 			console.error("error logging out", err);
 		}
@@ -403,28 +387,6 @@ export function useAppwrite() {
 		return result.documents || [];
 	}
 
-	/**
-	 * Sends a password-recovery email for a staff account. `url` is where
-	 * Appwrite sends the customer -- must land on RecoveryPage
-	 * (see App.js's /recovery route), which reads the userId/secret query
-	 * params this same email embeds and calls completePasswordRecovery.
-	 */
-	const requestPasswordRecovery = useCallback(
-		(email) => account.createRecovery({ email, url: `${window.location.origin}/recovery` }),
-		[account],
-	);
-
-	/**
-	 * Completes a password recovery -- userId/secret come from the emailed
-	 * link's query params (see RecoveryPage.js), not from anything the user
-	 * types, so this can't be used to reset an arbitrary account without
-	 * already having that emailed link.
-	 */
-	const completePasswordRecovery = useCallback(
-		(userId, secret, password) => account.updateRecovery({ userId, secret, password }),
-		[account],
-	);
-
 	// Return all public methods and state
 	return {
 		client,
@@ -440,10 +402,8 @@ export function useAppwrite() {
 		refreshDiscounts,
 		refreshData,
 		settings: data,
-		login,
+		loginWithGoogle,
 		loginWithPin,
-		requestPasswordRecovery,
-		completePasswordRecovery,
 		pinMode,
 		logout,
 		uniqueId: ID.unique,
