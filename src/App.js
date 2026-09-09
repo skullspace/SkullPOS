@@ -16,7 +16,7 @@
  */
 
 import { useAppwrite } from "./utils/api";
-import { clearPinMode } from "./utils/pin";
+import { clearPinMode, setPinMode } from "./utils/pin";
 import { useEffect, useState } from "react";
 import { BrowserRouter as Router, Navigate, Route, Routes, useNavigate } from "react-router-dom";
 
@@ -24,6 +24,16 @@ import { BrowserRouter as Router, Navigate, Route, Routes, useNavigate } from "r
 import Login from "./components/login";
 import POS from "./components/pos/pos";
 import SelfCheckout from "./components/selfCheckout/selfCheckout";
+
+// Three access tiers by Appwrite team membership, checked after Google
+// SSO (see RequireAuth below). Mirrors STAFF_TEAM_IDS in
+// AppwriteFunctions/functions/Sales-Report and Transactions-List, which
+// today treats admin+POS as equally "staff" server-side -- if these
+// tiers need to be enforced server-side too (not just hidden in this
+// client's UI), those functions' isStaff() checks need the same admin
+// vs. POS split.
+const ADMIN_TEAM_ID = "68e35aed00144b8cde9d";
+const POS_TEAM_IDS = ["68ffce9a0015d2dc0b0d", "68ffcecc0026f78f0af8"];
 
 /**
  * Gate for the /pos route. Renders nothing until the session check
@@ -36,7 +46,7 @@ import SelfCheckout from "./components/selfCheckout/selfCheckout";
  * there.
  */
 function RequireAuth({ children }) {
-	const { account, logout, pinMode } = useAppwrite();
+	const { account, teams, logout, pinMode } = useAppwrite();
 	const navigate = useNavigate();
 	const [ready, setReady] = useState(false);
 
@@ -45,7 +55,7 @@ function RequireAuth({ children }) {
 
 		account
 			.get()
-			.then((acct) => {
+			.then(async (acct) => {
 				if (cancelled) return;
 
 				if (acct && acct.email) {
@@ -58,14 +68,48 @@ function RequireAuth({ children }) {
 						logout("domain");
 						return;
 					}
-					// A stale PIN-mode flag from an earlier kiosk/PIN session on
-					// this same browser (one that ended some way other than the
-					// app's own Logout) would otherwise survive into this real
-					// staff session and silently restrict it (24h Sales Report
-					// cap, no refunds) even though this is a genuine,
-					// unrestricted login.
-					clearPinMode();
-					setReady(true);
+
+					// Any Skullspace Google account can sign in, but what it
+					// lands on depends on team membership: admin gets the
+					// full, unrestricted session; POS gets the same
+					// restricted "PIN mode" a quick-access cashier PIN gets
+					// (24h Sales Report cap, no refunds); no recognized team
+					// at all gets self-checkout only, same as a kiosk PIN.
+					// teams.list() only ever returns teams this account
+					// itself belongs to, so no extra permission is needed
+					// beyond the session that already exists.
+					let teamIds = [];
+					try {
+						const result = await teams.list();
+						teamIds = (result.teams || []).map((t) => t.$id);
+					} catch (err) {
+						console.error("Failed to check team membership (treating as no role):", err);
+					}
+
+					if (cancelled) return;
+
+					if (teamIds.includes(ADMIN_TEAM_ID)) {
+						// A stale PIN-mode flag from an earlier kiosk/PIN session
+						// on this same browser (one that ended some way other
+						// than the app's own Logout) would otherwise survive
+						// into this real staff session and silently restrict it
+						// even though this is a genuine, unrestricted login.
+						clearPinMode();
+						setReady(true);
+						return;
+					}
+
+					if (teamIds.some((id) => POS_TEAM_IDS.includes(id))) {
+						setPinMode(acct.name || acct.email, false);
+						setReady(true);
+						return;
+					}
+
+					// No recognized role -- self-checkout only, same as a
+					// kiosk PIN. Not rendering children here (no setReady)
+					// mirrors the kiosk-PIN-on-/pos case just below.
+					setPinMode(acct.name || acct.email, true);
+					navigate("/self-checkout", { replace: true });
 					return;
 				}
 
@@ -94,7 +138,7 @@ function RequireAuth({ children }) {
 		return () => {
 			cancelled = true;
 		};
-	}, [account, logout, navigate, pinMode]);
+	}, [account, teams, logout, navigate, pinMode]);
 
 	return ready ? children : null;
 }
