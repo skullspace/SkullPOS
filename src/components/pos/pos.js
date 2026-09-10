@@ -30,6 +30,7 @@ import { isWithinBarHours } from "../../utils/barHours";
 
 const POS = () => {
 	const {
+		client,
 		databases,
 		config,
 		categories,
@@ -162,6 +163,54 @@ const POS = () => {
 		() => !alcoholOverrideDisabled && isWithinBarHours(activeEvent, now),
 		[activeEvent, now, alcoholOverrideDisabled]
 	);
+
+	// Keeps a live ref of the cart so the realtime subscription below (subscribed once, not
+	// re-subscribed on every keystroke) can always check its CURRENT contents.
+	const cartRef = useRef(cart);
+	useEffect(() => {
+		cartRef.current = cart;
+	}, [cart]);
+
+	// Realtime: admin-app edits (item/category changes, the alcohol override toggle) reach this
+	// POS the moment they happen, via Appwrite's websocket Realtime API, instead of waiting on
+	// the next refresh/reload. The alcohol-override/settings and active-event channels always
+	// refresh immediately -- toggling visibility doesn't touch anything already in the cart.
+	// Item/category data (price, name, etc.) only refreshes when the cart is EMPTY, so an
+	// in-progress sale never has its prices change out from under it mid-transaction.
+	useEffect(() => {
+		if (!client) return;
+
+		const channels = [
+			`databases.${config.databases.data.id}.collections.${config.databases.data.collections.config}.documents`,
+			`databases.${config.databases.bar.id}.collections.${config.databases.bar.collections.events}.documents`,
+			`databases.${config.databases.bar.id}.collections.${config.databases.bar.collections.items}.documents`,
+			`databases.${config.databases.bar.id}.collections.${config.databases.bar.collections.categories}.documents`,
+		];
+
+		const unsubscribe = client.subscribe(channels, (response) => {
+			const channels = response.channels || [];
+			const isConfigChange = channels.some((c) => c.includes(`.collections.${config.databases.data.collections.config}.`));
+			const isEventChange = channels.some((c) => c.includes(`.collections.${config.databases.bar.collections.events}.`));
+			const isItemOrCategoryChange = channels.some(
+				(c) =>
+					c.includes(`.collections.${config.databases.bar.collections.items}.`) ||
+					c.includes(`.collections.${config.databases.bar.collections.categories}.`)
+			);
+
+			if (isConfigChange) {
+				refreshData();
+			}
+			if (isEventChange) {
+				fetchActiveEvent().then(setActiveEvent);
+			}
+			if (isItemOrCategoryChange && cartRef.current.length === 0) {
+				refreshItems();
+				refreshCategories();
+			}
+		});
+
+		return () => unsubscribe();
+	}, [client, config, refreshData, fetchActiveEvent, refreshItems, refreshCategories]);
 
 	const retryCheckout = () => {
 		setCheckoutError(false);
