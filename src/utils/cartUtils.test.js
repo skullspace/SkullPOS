@@ -1,4 +1,4 @@
-import { addItemToCart, removeItemFromCart, clearCartState } from "./cartUtils";
+import { addItemToCart, removeItemFromCart, clearCartState, isAlcoholCartItem } from "./cartUtils";
 
 const AVAILABLE_ITEMS = [
 	{ $id: "beer", name: "Beer", price: 700 },
@@ -61,5 +61,37 @@ describe("removeItemFromCart", () => {
 describe("clearCartState", () => {
 	test("returns a reset cart/discount state", () => {
 		expect(clearCartState()).toEqual({ appliedDiscount: null, discount: 0, cart: [] });
+	});
+});
+
+describe("isAlcoholCartItem", () => {
+	const CATEGORIES = [
+		{ $id: "beer-cat", name: "Beer", alcohol: true },
+		{ $id: "food-cat", name: "Food", alcohol: false },
+	];
+
+	test("true when the item itself is flagged alcohol", () => {
+		const item = { $id: "beer", alcohol: true, categories: "food-cat" };
+		expect(isAlcoholCartItem(item, CATEGORIES)).toBe(true);
+	});
+
+	test("true when the item's category is flagged alcohol, even if the item itself isn't", () => {
+		const item = { $id: "beer", alcohol: false, categories: "beer-cat" };
+		expect(isAlcoholCartItem(item, CATEGORIES)).toBe(true);
+	});
+
+	test("true when categories is an expanded relationship object, not a bare id", () => {
+		const item = { $id: "beer", categories: { $id: "beer-cat" } };
+		expect(isAlcoholCartItem(item, CATEGORIES)).toBe(true);
+	});
+
+	test("false when neither the item nor its category is alcohol", () => {
+		const item = { $id: "burger", alcohol: false, categories: "food-cat" };
+		expect(isAlcoholCartItem(item, CATEGORIES)).toBe(false);
+	});
+
+	test("false when the category can't be found (fails safe, doesn't throw)", () => {
+		const item = { $id: "mystery", categories: "unknown-cat" };
+		expect(isAlcoholCartItem(item, CATEGORIES)).toBe(false);
 	});
 });
