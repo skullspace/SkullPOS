@@ -216,8 +216,29 @@ export function useAppwrite() {
 		}
 	}, [databases]);
 
+	/**
+	 * Fetches the currently active event (isActive:true), if any -- used to gate the bar
+	 * menu's alcohol display on whether alcohol is actually being sold right now, per the
+	 * event's own sellsAlcohol flag and barOpenTime/barCloseTime window (set via the admin
+	 * app's Events screen). Returns null if there's no active event or the fetch fails, which
+	 * pos.js treats the same way -- alcohol stays hidden by default when this is unknown.
+	 */
+	const fetchActiveEvent = useCallback(async () => {
+		try {
+			const result = await databases.listDocuments({
+				databaseId: config.databases.bar.id,
+				collectionId: config.databases.bar.collections.events,
+				queries: [Query.equal("isActive", true), Query.limit(1)],
+			});
+			return result.documents?.[0] || null;
+		} catch (err) {
+			console.error("error fetching active event", err);
+			return null;
+		}
+	}, [databases]);
+
 	const functions = useMemo(() => new Functions(client), [client]);
-	
+
 	/**
 	 * Generate Stripe connection token via Appwrite Function
 	 * Used for initializing Stripe Terminal connection
@@ -403,6 +424,7 @@ export function useAppwrite() {
 		refreshItems,
 		refreshDiscounts,
 		refreshData,
+		fetchActiveEvent,
 		settings: data,
 		loginWithGoogle,
 		loginWithPin,
