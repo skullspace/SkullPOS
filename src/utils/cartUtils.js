@@ -90,3 +90,21 @@ export function clearCartState() {
 		cart: [],
 	};
 }
+
+/**
+ * Whether a cart item counts as alcohol -- either the item itself is flagged (`alcohol`,
+ * normalized from pos_items' `contains_alcohol`), or it belongs to a category that is.
+ * Mirrors Sales-Report's own `cartItem.alcohol === true || category.alcohol === true` rule,
+ * so "is this alcohol" means the same thing everywhere it's checked.
+ *
+ * @param {Object} cartItem - A cart entry (carries the full item document's fields plus quantity)
+ * @param {Array<Object>} categories - Currently known category documents
+ * @returns {boolean}
+ */
+export function isAlcoholCartItem(cartItem, categories) {
+	if (cartItem.alcohol === true) return true;
+	const categoryId =
+		cartItem.categories && typeof cartItem.categories === "object" ? cartItem.categories.$id : cartItem.categories;
+	const category = categories.find((c) => c.$id === categoryId);
+	return !!category?.alcohol;
+}

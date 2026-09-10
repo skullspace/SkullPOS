@@ -19,6 +19,7 @@ import {
 	addItemToCart as addItemToCartUtil,
 	removeItemFromCart as removeItemFromCartUtil,
 	clearCartState as clearCartStateUtil,
+	isAlcoholCartItem,
 } from "../../utils/cartUtils";
 import { findGiftcardByUPC } from "../../utils/giftcard";
 import { recordPayment, recordPaymentWithRetry, describeUnknownPaymentFailure } from "../../utils/splitPayment";
@@ -171,6 +172,11 @@ const POS = () => {
 		cartRef.current = cart;
 	}, [cart]);
 
+	// Set when an item/category change arrives while the cart is non-empty (so it was skipped
+	// below) -- the cart-watching effect further down applies it as soon as the cart empties
+	// out, instead of that update being silently lost until the next unrelated change.
+	const pendingItemRefreshRef = useRef(false);
+
 	// Realtime: admin-app edits (item/category changes, the alcohol override toggle) reach this
 	// POS the moment they happen, via Appwrite's websocket Realtime API, instead of waiting on
 	// the next refresh/reload. The alcohol-override/settings and active-event channels always
@@ -203,14 +209,44 @@ const POS = () => {
 			if (isEventChange) {
 				fetchActiveEvent().then(setActiveEvent);
 			}
-			if (isItemOrCategoryChange && cartRef.current.length === 0) {
-				refreshItems();
-				refreshCategories();
+			if (isItemOrCategoryChange) {
+				if (cartRef.current.length === 0) {
+					refreshItems();
+					refreshCategories();
+				} else {
+					pendingItemRefreshRef.current = true;
+				}
 			}
 		});
 
 		return () => unsubscribe();
 	}, [client, config, refreshData, fetchActiveEvent, refreshItems, refreshCategories]);
+
+	// Applies a refresh that arrived mid-sale (see pendingItemRefreshRef above) the moment the
+	// cart empties back out -- e.g. right after checkout completes, or the cart is cleared.
+	useEffect(() => {
+		if (cart.length === 0 && pendingItemRefreshRef.current) {
+			pendingItemRefreshRef.current = false;
+			refreshItems();
+			refreshCategories();
+		}
+	}, [cart.length, refreshItems, refreshCategories]);
+
+	// If alcohol sales become disallowed (the override switches on, or the active event's bar
+	// hours end) while alcohol items are already sitting in the cart, pull them back out --
+	// a sale can't complete with alcohol in it once alcohol isn't allowed to be sold.
+	useEffect(() => {
+		if (alcoholCurrentlyAllowed) return;
+		const remaining = cart.filter((cartItem) => !isAlcoholCartItem(cartItem, categories));
+		if (remaining.length === cart.length) return;
+		setCart(remaining);
+		setStripeAlert({
+			active: true,
+			message: "Alcohol is no longer available for sale -- alcohol item(s) were removed from the cart.",
+			type: "warning",
+		});
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [alcoholCurrentlyAllowed, categories]);
 
 	const retryCheckout = () => {
 		setCheckoutError(false);
