@@ -40,6 +40,7 @@ const POS = () => {
 		refreshDiscounts,
 		refreshData,
 		fetchActiveEvent,
+		settings,
 		uniqueId,
 		currentUser,
 		functions,
@@ -152,7 +153,15 @@ const POS = () => {
 		return () => clearInterval(id);
 	}, []);
 
-	const alcoholCurrentlyAllowed = useMemo(() => isWithinBarHours(activeEvent, now), [activeEvent, now]);
+	// Admin-controlled kill switch (barData/config's "alcohol_override_disabled" row, set via
+	// the admin app) -- when on, alcohol is hidden here regardless of the event/bar-hours gate
+	// above, for a manual/emergency stop independent of any event configuration.
+	const alcoholOverrideDisabled = settings?.alcohol_override_disabled === "true";
+
+	const alcoholCurrentlyAllowed = useMemo(
+		() => !alcoholOverrideDisabled && isWithinBarHours(activeEvent, now),
+		[activeEvent, now, alcoholOverrideDisabled]
+	);
 
 	const retryCheckout = () => {
 		setCheckoutError(false);
