@@ -25,6 +25,7 @@ import { recordPayment, recordPaymentWithRetry, describeUnknownPaymentFailure } 
 import { setTransactionStatus } from "../../utils/transactionStatus";
 import { setItemEnabled } from "../../utils/itemVisibility";
 import { parseDollarsToCents } from "../../utils/cashTender";
+import { isWithinBarHours } from "../../utils/barHours";
 
 
 const POS = () => {
@@ -38,6 +39,7 @@ const POS = () => {
 		refreshItems,
 		refreshDiscounts,
 		refreshData,
+		fetchActiveEvent,
 		uniqueId,
 		currentUser,
 		functions,
@@ -130,8 +132,27 @@ const POS = () => {
 	// Local, staff-side convenience: hide alcohol items/categories from this
 	// POS's own selling grid (e.g. before bar service starts). Purely a view
 	// filter on this device -- does not touch the database or the customer
-	// menu display.
+	// menu display. Layered on top of the event-driven gate below (both must
+	// allow alcohol for it to show), not a replacement for it.
 	const [hideAlcohol, setHideAlcohol] = useState(false);
+
+	// Event-driven alcohol gate: the active event (set via the admin app's Events screen)
+	// says whether alcohol is being sold at all today and, if so, during what bar-hours
+	// window. No active event, or outside that window, hides alcohol automatically --
+	// re-checked every minute so it flips on/off at the boundary without a page reload.
+	const [activeEvent, setActiveEvent] = useState(null);
+	const [now, setNow] = useState(() => new Date());
+
+	useEffect(() => {
+		fetchActiveEvent().then(setActiveEvent);
+	}, [fetchActiveEvent]);
+
+	useEffect(() => {
+		const id = setInterval(() => setNow(new Date()), 60000);
+		return () => clearInterval(id);
+	}, []);
+
+	const alcoholCurrentlyAllowed = useMemo(() => isWithinBarHours(activeEvent, now), [activeEvent, now]);
 
 	const retryCheckout = () => {
 		setCheckoutError(false);
@@ -548,11 +569,11 @@ const POS = () => {
 		return map;
 	}, [cart]);
 
-	// When hideAlcohol is on, drop alcohol categories (and everything in
-	// them) from this device's own selling grid entirely.
+	// Drop alcohol categories (and everything in them) when either the event-driven gate
+	// says alcohol isn't currently being sold, or the staff-side hideAlcohol toggle is on.
 	const displayCategories = useMemo(
-		() => (hideAlcohol ? categories.filter((c) => !c.alcohol) : categories),
-		[categories, hideAlcohol]
+		() => (!alcoholCurrentlyAllowed || hideAlcohol ? categories.filter((c) => !c.alcohol) : categories),
+		[categories, hideAlcohol, alcoholCurrentlyAllowed]
 	);
 
 	const categoriesWithItems = useMemo(
