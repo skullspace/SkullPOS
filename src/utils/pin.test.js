@@ -35,19 +35,24 @@ describe("pin mode storage", () => {
 		expect(getPinMode()).toBeNull();
 	});
 
-	test("round-trips a label through set/get, defaulting selfCheckout to false", () => {
+	test("round-trips a label through set/get, defaulting selfCheckout and bartenderId", () => {
 		setPinMode("Alice");
-		expect(getPinMode()).toEqual({ label: "Alice", selfCheckout: false });
+		expect(getPinMode()).toEqual({ label: "Alice", selfCheckout: false, bartenderId: null });
 	});
 
 	test("stores a null label when none is given", () => {
 		setPinMode();
-		expect(getPinMode()).toEqual({ label: null, selfCheckout: false });
+		expect(getPinMode()).toEqual({ label: null, selfCheckout: false, bartenderId: null });
 	});
 
 	test("round-trips selfCheckout:true for a kiosk PIN", () => {
 		setPinMode("Self-Checkout Kiosk 1", true);
-		expect(getPinMode()).toEqual({ label: "Self-Checkout Kiosk 1", selfCheckout: true });
+		expect(getPinMode()).toEqual({ label: "Self-Checkout Kiosk 1", selfCheckout: true, bartenderId: null });
+	});
+
+	test("round-trips a bartenderId for a bartender's own pin", () => {
+		setPinMode("Alex", false, "bt1");
+		expect(getPinMode()).toEqual({ label: "Alex", selfCheckout: false, bartenderId: "bt1" });
 	});
 
 	test("clearPinMode removes the stored flag", () => {
@@ -66,6 +71,6 @@ describe("pin mode storage", () => {
 		// sessionStorage clearing (simulating a tab close) must not affect it --
 		// this is the whole point of using localStorage for kiosk persistence.
 		sessionStorage.clear();
-		expect(getPinMode()).toEqual({ label: "Self-Checkout Kiosk 1", selfCheckout: true });
+		expect(getPinMode()).toEqual({ label: "Self-Checkout Kiosk 1", selfCheckout: true, bartenderId: null });
 	});
 });

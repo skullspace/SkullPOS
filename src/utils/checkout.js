@@ -13,6 +13,7 @@ export default function createCheckout(deps) {
 		getTotal,
 		getDiscount,
 		getCreatedBy,
+		getBartenderId,
 		getChannel,
 		getMemberName,
 		getMemberEmail,
@@ -54,6 +55,9 @@ export default function createCheckout(deps) {
 			testing: test,
 			total: getTotal ? getTotal() : 0,
 			CreatedBy: getCreatedBy ? getCreatedBy() : null,
+			// Set only when the current session is a bartender's own event-scoped pin (see
+			// Verify-Pin) -- lets Bartender-Sales scope "my sales" to exactly this bartender.
+			bartenderId: getBartenderId ? getBartenderId() : null,
 			// "pos" (regular staff register) or "self_checkout" (customer
 			// kiosk) -- defaults to "pos" so every existing caller of this
 			// factory needs no changes. Lets Sales-Report compare the two, and
@@ -116,7 +120,7 @@ export default function createCheckout(deps) {
 					if (!applyResult.ok) throw new Error(applyResult.error || "Failed to apply giftcard");
 				} catch (err) {
 					console.error("Error applying giftcard:", err);
-					setCheckoutError && setCheckoutError("Failed to apply giftcard");
+					setCheckoutError && setCheckoutError(err.message || "Failed to apply giftcard");
 					setTransactionInProgress && setTransactionInProgress(false);
 					return;
 				}

@@ -21,7 +21,7 @@ const PIN_MODE_STORAGE_KEY = "skullpos_pin_mode";
  * @param {Object} params
  * @param {Functions} params.functions - Appwrite Functions client
  * @param {string} params.pin
- * @returns {Promise<{ok: boolean, label?: string, selfCheckout?: boolean}>}
+ * @returns {Promise<{ok: boolean, label?: string, selfCheckout?: boolean, bartenderId?: string|null, error?: string}>}
  */
 export async function verifyPin({ functions, pin }) {
 	const response = await functions.createExecution({
@@ -39,7 +39,7 @@ export async function verifyPin({ functions, pin }) {
  * until an explicit "Log out" (clearPinMode), not just until the tab/
  * browser closes.
  *
- * @returns {{label: string|null, selfCheckout: boolean}|null}
+ * @returns {{label: string|null, selfCheckout: boolean, bartenderId: string|null}|null}
  */
 export function getPinMode() {
 	try {
@@ -50,9 +50,19 @@ export function getPinMode() {
 	}
 }
 
-export function setPinMode(label, selfCheckout) {
+/**
+ * @param {string|null} label
+ * @param {boolean} selfCheckout
+ * @param {string|null} [bartenderId] - set only for a bartender's own event-scoped pin (see
+ *   Verify-Pin) -- every sale made in this session gets attributed back to this bartender, and
+ *   the "My Sales" screen scopes to it.
+ */
+export function setPinMode(label, selfCheckout, bartenderId = null) {
 	try {
-		localStorage.setItem(PIN_MODE_STORAGE_KEY, JSON.stringify({ label: label || null, selfCheckout: !!selfCheckout }));
+		localStorage.setItem(
+			PIN_MODE_STORAGE_KEY,
+			JSON.stringify({ label: label || null, selfCheckout: !!selfCheckout, bartenderId: bartenderId || null }),
+		);
 	} catch (err) {
 		// localStorage unavailable (e.g. private browsing) -- pin mode just
 		// won't persist across a reload, not worth surfacing to the cashier

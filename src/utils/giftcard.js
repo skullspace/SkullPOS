@@ -19,8 +19,10 @@ const GIFTCARD_LOOKUP_FUNCTION_ID = "6a9c5c1acb643536564a";
  * @param {Object} params
  * @param {Functions} params.functions - Appwrite Functions client
  * @param {string} params.code - Scanned/entered UPC or giftcard code
- * @returns {Promise<{$id: string, balance: number}|null>} A minimal
- *   giftcard-shaped object (just what checkout needs), or null if no match
+ * @returns {Promise<{$id: string, balance: number, eventId: string|null, active: boolean}|null>}
+ *   A minimal giftcard-shaped object (just what checkout needs), or null if no match.
+ *   `eventId` is set only for a DJ voucher (a giftcard scoped to one event) -- a standing
+ *   customer gift card always has `eventId: null`.
  */
 export async function findGiftcardByUPC({ functions, code }) {
 	const response = await functions.createExecution({
@@ -29,5 +31,10 @@ export async function findGiftcardByUPC({ functions, code }) {
 	});
 	const result = JSON.parse(response.responseBody || "{}");
 	if (!result.found) return null;
-	return { $id: result.id, balance: result.balance || 0 };
+	return {
+		$id: result.id,
+		balance: result.balance || 0,
+		eventId: result.eventId || null,
+		active: result.active !== false,
+	};
 }

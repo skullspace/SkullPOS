@@ -45,6 +45,7 @@ const Cart = ({
 	setOpenSalesReport,
 	setOpenTransactions,
 	setOpenManageItems,
+	setOpenMySales,
 	hideAlcohol,
 	onToggleHideAlcohol,
 	onLogout,
@@ -141,6 +142,11 @@ const Cart = ({
 							{setOpenManageItems && (
 								<MenuItem onClick={() => setOpenManageItems(true)}>
 									Manage Items
+								</MenuItem>
+							)}
+							{setOpenMySales && (
+								<MenuItem onClick={() => setOpenMySales(true)}>
+									My Sales
 								</MenuItem>
 							)}
 							<Divider />
@@ -312,6 +318,7 @@ const Cart = ({
 							appliedDiscount={appliedDiscount}
 							onSelectDiscount={onSelectDiscount}
 							isProcessing={!!transactionInProgress}
+							giftcard={giftcard}
 						/>
 
 						<CheckoutButton

@@ -318,8 +318,10 @@ export function useAppwrite() {
 	 * /self-checkout based on `result.selfCheckout`.
 	 *
 	 * @param {string} pin
-	 * @returns {Promise<{ok: boolean, label?: string, selfCheckout?: boolean}>}
-	 * @throws {Error} If the PIN doesn't match
+	 * @returns {Promise<{ok: boolean, label?: string, selfCheckout?: boolean, bartenderId?: string|null}>}
+	 * @throws {Error} If the PIN doesn't match -- with the server's specific reason (e.g. a
+	 *   bartender pin used outside its event's 1-hour window) when one is given, instead of a
+	 *   generic message that would hide it from the cashier.
 	 */
 	const loginWithPin = useCallback(
 		async (pin) => {
@@ -331,11 +333,11 @@ export function useAppwrite() {
 
 			const result = await verifyPin({ functions, pin });
 			if (!result.ok) {
-				throw new Error("Incorrect PIN");
+				throw new Error(result.error || "Incorrect PIN");
 			}
 
-			setPinMode(result.label, result.selfCheckout);
-			setPinModeState({ label: result.label || null, selfCheckout: !!result.selfCheckout });
+			setPinMode(result.label, result.selfCheckout, result.bartenderId);
+			setPinModeState({ label: result.label || null, selfCheckout: !!result.selfCheckout, bartenderId: result.bartenderId || null });
 			return result;
 		},
 		[functions, account],

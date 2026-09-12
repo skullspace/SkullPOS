@@ -38,7 +38,7 @@ const GiftcardDisplay = ({ giftcard, onClear, isProcessing = false }) => {
 			}}
 		>
 			<div>
-				<strong>Giftcard:</strong> {maskGiftcardId(giftcard.$id)}
+				<strong>{giftcard.eventId ? "DJ Voucher" : "Giftcard"}:</strong> {maskGiftcardId(giftcard.$id)}
 				<div>Balance: {formatCAD(giftcard.balance || 0)}</div>
 			</div>
 			<Button

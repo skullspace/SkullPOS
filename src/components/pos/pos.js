@@ -9,6 +9,7 @@ import { useAppwrite } from "../../utils/api";
 import SalesReport from "./salesReport";
 import TransactionsView from "./transactionsView";
 import ManageItemsView from "./manageItemsView";
+import MySalesView from "./mySalesView";
 import Category from "./category";
 import { formatCAD } from "../../utils/format";
 import { useStripe } from "../../utils/stripe";
@@ -89,6 +90,7 @@ const POS = () => {
 	const [openSalesReport, setOpenSalesReport] = useState(false);
 	const [openTransactions, setOpenTransactions] = useState(false);
 	const [openManageItems, setOpenManageItems] = useState(false);
+	const [openMySales, setOpenMySales] = useState(false);
 	const [searchQuery, setSearchQuery] = useState("");
 	// Non-null while a "Split Payment" checkout is in progress -- the
 	// pending transaction already exists, and SplitPaymentPanel drives the
@@ -369,12 +371,40 @@ const POS = () => {
 					return;
 				}
 
+				// A DJ voucher (a giftcard scoped to one event) has extra rules -- these are
+				// just client-side pre-checks for a fast/clear message; Transaction-RecordPayment
+				// re-validates all of this server-side at checkout regardless.
+				if (found.eventId) {
+					if (found.active === false) {
+						setStripeAlert({ active: true, message: "This voucher has been revoked", type: "error" });
+						return;
+					}
+					if (!activeEvent || activeEvent.$id !== found.eventId) {
+						setStripeAlert({
+							active: true,
+							message: "This voucher is only valid during its own event",
+							type: "error",
+						});
+						return;
+					}
+					if (appliedDiscount) {
+						setStripeAlert({
+							active: true,
+							message: "Clear the discount before using a DJ voucher",
+							type: "error",
+						});
+						return;
+					}
+				}
+
 				// set local giftcard state and switch payment method to giftcard
 				setGiftcard(found);
 				setPaymentMethod("giftcard");
 				setStripeAlert({
 					active: true,
-					message: `Giftcard loaded: $${(found.balance || 0) / 100}`,
+					message: found.eventId
+						? `DJ voucher loaded: $${(found.balance || 0) / 100}`
+						: `Giftcard loaded: $${(found.balance || 0) / 100}`,
 					type: "success",
 				});
 			} catch (err) {
@@ -386,7 +416,7 @@ const POS = () => {
 				});
 			}
 		},
-		[functions, setStripeAlert],
+		[functions, setStripeAlert, activeEvent, appliedDiscount],
 	);
 
 	const processBarcode = useMemo(
@@ -439,6 +469,14 @@ const POS = () => {
 	}, [processBarcode]);
 
 	const selectDiscount = (discountOption) => {
+		if (discountOption && giftcard?.eventId) {
+			setStripeAlert({
+				active: true,
+				message: "Clear the DJ voucher before applying a discount",
+				type: "error",
+			});
+			return;
+		}
 		if (!discountOption || appliedDiscount?.$id === discountOption.$id) {
 			setAppliedDiscount(null);
 			setDiscount(0);
@@ -506,7 +544,8 @@ const POS = () => {
 				config,
 				functions,
 				uniqueId,
-				getCreatedBy: () => currentUser?.name || currentUser?.email || null,
+				getCreatedBy: () => pinMode?.label || currentUser?.name || currentUser?.email || null,
+				getBartenderId: () => pinMode?.bartenderId || null,
 				getCart: () => cart,
 				getTotal: () => total,
 				getDiscount: () => discount,
@@ -807,6 +846,7 @@ const POS = () => {
 				setOpenSalesReport={setOpenSalesReport}
 				setOpenTransactions={setOpenTransactions}
 				setOpenManageItems={!pinMode ? setOpenManageItems : undefined}
+				setOpenMySales={pinMode?.bartenderId ? setOpenMySales : undefined}
 				onLogout={logout}
 				hideAlcohol={hideAlcohol}
 				onToggleHideAlcohol={(checked) => setHideAlcohol(checked)}
@@ -875,6 +915,12 @@ const POS = () => {
 				open={openSalesReport}
 				onClose={() => setOpenSalesReport(false)}
 				restricted={!!pinMode}
+			/>
+			<MySalesView
+				open={openMySales}
+				onClose={() => setOpenMySales(false)}
+				functions={functions}
+				bartenderId={pinMode?.bartenderId}
 			/>
 			<TransactionsView
 				open={openTransactions}

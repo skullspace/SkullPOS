@@ -25,6 +25,8 @@ import { formatCAD } from "../../../utils/format";
  * @param {Object|null} props.appliedDiscount - Currently applied discount, if any
  * @param {Function} props.onSelectDiscount - Callback with the chosen discount (or null to clear)
  * @param {boolean} props.isProcessing - Whether transaction is in progress
+ * @param {Object|null} props.giftcard - Currently loaded giftcard, if any -- a DJ voucher
+ *   (`giftcard.eventId` set) can't be combined with a discount, so it disables this button
  *
  * @returns {JSX.Element} Payment method selector buttons
  */
@@ -36,6 +38,7 @@ const PaymentMethodButtons = ({
 	appliedDiscount,
 	onSelectDiscount,
 	isProcessing = false,
+	giftcard = null,
 }) => {
 	const isCardDisabled = !isTerminalReady || isProcessing;
 	const [discountMenuAnchor, setDiscountMenuAnchor] = useState(null);
@@ -113,7 +116,7 @@ const PaymentMethodButtons = ({
 				fullWidth
 				sx={buttonSx}
 				onClick={(e) => setDiscountMenuAnchor(e.currentTarget)}
-				disabled={isProcessing || discounts.length === 0}
+				disabled={isProcessing || discounts.length === 0 || !!giftcard?.eventId}
 			>
 				{appliedDiscount ? appliedDiscount.name : "Discount"}
 			</Button>

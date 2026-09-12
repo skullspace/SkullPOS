@@ -89,6 +89,33 @@ describe("checkout", () => {
 		);
 	});
 
+	test("defaults bartenderId to null when getBartenderId isn't provided", async () => {
+		const deps = makeDeps({ getPaymentMethod: jest.fn().mockReturnValue("cash") });
+		await createCheckout(deps)();
+
+		expect(deps.databases.createDocument).toHaveBeenCalledWith(
+			"db1",
+			"txns",
+			"generated-id",
+			expect.objectContaining({ bartenderId: null }),
+		);
+	});
+
+	test("attributes the sale to the logged-in bartender's own row", async () => {
+		const deps = makeDeps({
+			getPaymentMethod: jest.fn().mockReturnValue("cash"),
+			getBartenderId: jest.fn().mockReturnValue("bt1"),
+		});
+		await createCheckout(deps)();
+
+		expect(deps.databases.createDocument).toHaveBeenCalledWith(
+			"db1",
+			"txns",
+			"generated-id",
+			expect.objectContaining({ bartenderId: "bt1" }),
+		);
+	});
+
 	test("passes through channel:'self_checkout' when getChannel returns it", async () => {
 		const deps = makeDeps({
 			getPaymentMethod: jest.fn().mockReturnValue("stripe"),
@@ -181,7 +208,7 @@ describe("checkout", () => {
 		expect(deps.setGiftcard).toHaveBeenCalledWith(null);
 	});
 
-	test("giftcard: a clean apply failure surfaces an error and never touches the card", async () => {
+	test("giftcard: a clean apply failure surfaces the server's real error and never touches the card", async () => {
 		const deps = makeDeps({
 			getPaymentMethod: jest.fn().mockReturnValue("giftcard"),
 			getGiftcard: jest.fn().mockReturnValue({ $id: "gc1", balance: 400 }),
@@ -190,8 +217,23 @@ describe("checkout", () => {
 
 		await createCheckout(deps)();
 
-		expect(deps.setCheckoutError).toHaveBeenCalledWith("Failed to apply giftcard");
+		// The specific reason (e.g. a DJ voucher's "wrong event"/"revoked"/"can't combine with a
+		// discount" rejection) must reach the cashier, not a generic fallback -- this is what
+		// makes those rejections visible at the main checkout path.
+		expect(deps.setCheckoutError).toHaveBeenCalledWith("giftcard balance changed");
 		expect(deps.handleCardPayment).not.toHaveBeenCalled();
+	});
+
+	test("giftcard: falls back to a generic message if the server error has no message", async () => {
+		const deps = makeDeps({
+			getPaymentMethod: jest.fn().mockReturnValue("giftcard"),
+			getGiftcard: jest.fn().mockReturnValue({ $id: "gc1", balance: 400 }),
+		});
+		recordPayment.mockResolvedValue({ ok: false });
+
+		await createCheckout(deps)();
+
+		expect(deps.setCheckoutError).toHaveBeenCalledWith("Failed to apply giftcard");
 	});
 
 	test("surfaces an error and rethrows when creating the transaction document fails", async () => {
