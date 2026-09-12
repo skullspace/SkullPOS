@@ -15,6 +15,7 @@ import { formatCAD } from "../../utils/format";
 import { useStripe } from "../../utils/stripe";
 import createHandleCardPayment from "../../utils/handleCardPayment";
 import createCheckout from "../../utils/checkout";
+import createRetryCheckout from "../../utils/retryCheckout";
 import createProcessBarcode from "../../utils/barcode";
 import {
 	addItemToCart as addItemToCartUtil,
@@ -23,7 +24,7 @@ import {
 	isAlcoholCartItem,
 } from "../../utils/cartUtils";
 import { findGiftcardByUPC } from "../../utils/giftcard";
-import { recordPayment, recordPaymentWithRetry, describeUnknownPaymentFailure } from "../../utils/splitPayment";
+import { recordPaymentWithRetry, describeUnknownPaymentFailure } from "../../utils/splitPayment";
 import { setTransactionStatus } from "../../utils/transactionStatus";
 import { setItemEnabled } from "../../utils/itemVisibility";
 import { parseDollarsToCents } from "../../utils/cashTender";
@@ -50,6 +51,7 @@ const POS = () => {
 		fetchTransactions,
 		logout,
 		pinMode,
+		sessionError,
 	} = useAppwrite();
 
 	const {
@@ -147,6 +149,15 @@ const POS = () => {
 	// re-checked every minute so it flips on/off at the boundary without a page reload.
 	const [activeEvent, setActiveEvent] = useState(null);
 	const [now, setNow] = useState(() => new Date());
+
+	// A transient session-check failure (flaky venue WiFi, a timeout) -- see api.js's
+	// checkSession. Unlike an actual auth failure, this does NOT log the cashier out; just
+	// surface it as a dismissible banner instead of failing silently.
+	useEffect(() => {
+		if (sessionError) {
+			setStripeAlert({ active: true, message: sessionError, type: "warning" });
+		}
+	}, [sessionError, setStripeAlert]);
 
 	useEffect(() => {
 		fetchActiveEvent().then(setActiveEvent);
@@ -250,85 +261,12 @@ const POS = () => {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [alcoholCurrentlyAllowed, categories]);
 
-	const retryCheckout = () => {
-		setCheckoutError(false);
-		if (!transactionId.current) {
-			setCheckoutError("No transaction available to retry");
-			return;
-		}
 
-		// A card that may have already been charged must never be
-		// re-charged blindly -- this shouldn't be reachable since the
-		// ErrorModal hides Retry in this state, but guard here too.
-		if (cardChargeUnconfirmed) {
-			return;
-		}
-
-		// mark transaction as in progress for UI
-		setTransactionInProgress(true);
-
-		if (paymentMethod === "stripe") {
-			// reuse existing transaction id and re-attempt charging the card
-			handleCardPayment(transactionId.current, true);
-			return;
-		}
-
-		if (paymentMethod === "giftcard") {
-			(async () => {
-				const gift = giftcard;
-				if (!gift) {
-					setCheckoutError("No giftcard loaded");
-					setTransactionInProgress(false);
-					return;
-				}
-
-				try {
-					const applyAmount = Math.min(parseInt(gift.balance) || 0, parseInt(total || 0));
-					const result = await recordPayment({
-						functions,
-						transactionId: transactionId.current,
-						method: "giftcard",
-						amount: applyAmount,
-						giftcardId: gift.$id,
-					});
-					if (!result.ok) throw new Error(result.error || "Failed to apply giftcard");
-
-					setGiftcard && setGiftcard({ ...gift, balance: gift.balance - applyAmount });
-
-					if (result.remaining <= 0) {
-						setTransactionInProgress(false);
-						setCheckoutSuccess(true);
-						clearCart();
-						setPaymentMethod("stripe");
-						return;
-					}
-
-					// partial: charge remainder via card
-					if (handleCardPayment) {
-						await handleCardPayment(transactionId.current, true, result.remaining);
-						return;
-					}
-				} catch (err) {
-					console.error("Retry giftcard error", err);
-					setCheckoutError("Failed to retry giftcard");
-					setTransactionInProgress(false);
-				}
-			})();
-			return;
-		}
-
-		if (paymentMethod === "cash") {
-			// reopen cash modal so user can re-submit cash payment
-			setCashModalOpen(true);
-			setTransactionInProgress(false);
-			return;
-		}
-
-		// fallback: clear in-progress state
-		setTransactionInProgress(false);
-	};
-
-	const calculateTotal = () => {
+	// useCallback so this only gets a new identity when the cart or discount actually change --
+	// it's a dependency of the terminal-display effect below, and a fresh function reference on
+	// every render (e.g. from typing in the item search box) used to re-fire that effect for
+	// unrelated renders.
+	const calculateTotal = useCallback(() => {
 		let newTotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
 		if (appliedDiscount) {
 			let discountAmount =
@@ -342,14 +280,18 @@ const POS = () => {
 			setDiscount(0);
 		}
 		setTotal(parseInt(newTotal));
-	};
+	}, [cart, appliedDiscount]);
 
 	// Barcode scanner keyboard capture
 	const barcodeBuffer = useRef("");
 	const barcodeTimer = useRef(null);
 
 	const [giftcard, setGiftcard] = useState(null);
-	const [, setGiftcardUsage] = useState(null);
+	// Set by checkout.js's giftcard branch (and retryCheckout.js) whenever the giftcard only
+	// partially covers the sale -- {applied, remaining} in cents. Reading this back (instead of
+	// discarding it) is what lets a retry after a failed card leg charge the actual remaining
+	// amount instead of recomputing from the full cart total / the giftcard's stale balance.
+	const [giftcardUsage, setGiftcardUsage] = useState(null);
 
 	const handleGiftcard = useCallback(
 		async (code) => {
@@ -500,6 +442,7 @@ const POS = () => {
 		setDiscount(reset.discount);
 		setCart(reset.cart);
 		setGiftcard(null);
+		setGiftcardUsage(null);
 	}
 
 	// Create handleCardPayment using the utility factory so UI logic stays thin
@@ -584,6 +527,46 @@ const POS = () => {
 			setCheckoutSuccess,
 			setPaymentMethod,
 			setGiftcardUsage,
+		],
+	);
+
+	// Retries the payment leg for an already-created (pending) transaction after a failure --
+	// see retryCheckout.js. Built the same injectable-deps way as checkout/handleCardPayment so
+	// the giftcard-partial-then-failed-card path can be unit tested directly.
+	const retryCheckout = useMemo(
+		() =>
+			createRetryCheckout({
+				transactionIdRef: transactionId,
+				getCardChargeUnconfirmed: () => cardChargeUnconfirmed,
+				getPaymentMethod: () => paymentMethod,
+				getGiftcard: () => giftcard,
+				getGiftcardUsage: () => giftcardUsage,
+				getTotal: () => total,
+				functions,
+				setGiftcard,
+				setGiftcardUsage,
+				setTransactionInProgress,
+				setCheckoutError,
+				setCheckoutSuccess,
+				setPaymentMethod,
+				setCashModalOpen,
+				clearCart,
+				handleCardPayment,
+			}),
+		[
+			cardChargeUnconfirmed,
+			paymentMethod,
+			giftcard,
+			giftcardUsage,
+			total,
+			functions,
+			setTransactionInProgress,
+			setCheckoutError,
+			setCheckoutSuccess,
+			setPaymentMethod,
+			setCashModalOpen,
+			clearCart,
+			handleCardPayment,
 		],
 	);
 
@@ -834,8 +817,10 @@ const POS = () => {
 				setSelectedTerminal={setSelectedTerminal}
 				onManualUPCEntry={processBarcode}
 				giftcard={giftcard}
+				giftcardUsage={giftcardUsage}
 				onClearGiftcard={() => {
 					setGiftcard(null);
+					setGiftcardUsage(null);
 					setPaymentMethod("stripe");
 					setStripeAlert({
 						active: true,

@@ -156,7 +156,14 @@ export default function createCheckout(deps) {
 						setGiftcardUsage && setGiftcardUsage(null);
 						return;
 					} catch (err) {
-						// card charge failed — giftcard portion was already applied
+						// handleCardPayment catches its own errors internally and reports them
+						// via setCheckoutError, so in practice this should never throw. This is
+						// only a backstop for something throwing before it reaches its own
+						// try/catch (e.g. a bug in a getter passed in as a dep) -- without it,
+						// the cashier would be left staring at a screen with no error message
+						// and no way to know the giftcard portion was already applied.
+						console.error("Unexpected error charging card after partial giftcard payment:", err);
+						setCheckoutError && setCheckoutError(err.message || "Card payment failed unexpectedly");
 						setTransactionInProgress && setTransactionInProgress(false);
 						return;
 					}

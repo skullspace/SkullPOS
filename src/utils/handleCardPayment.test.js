@@ -112,4 +112,27 @@ describe("handleCardPayment", () => {
 		expect(recordPaymentWithRetry).not.toHaveBeenCalled();
 		expect(deps.setCardChargeUnconfirmed).not.toHaveBeenCalledWith(true);
 	});
+
+	test("a plain network/JS error with no .code shows just the message, not a literal 'undefined' prefix", async () => {
+		const deps = makeDeps({
+			chargeCard: jest.fn().mockRejectedValue(new Error("Network request failed")),
+		});
+		const handler = createHandleCardPayment(deps);
+
+		await handler("t1");
+
+		expect(deps.setCheckoutError).toHaveBeenCalledWith("Network request failed");
+		expect(deps.setCheckoutError).not.toHaveBeenCalledWith(expect.stringContaining("undefined"));
+	});
+
+	test("an error with neither .code nor .message falls back to a generic message instead of blank/undefined text", async () => {
+		const deps = makeDeps({
+			chargeCard: jest.fn().mockRejectedValue({}),
+		});
+		const handler = createHandleCardPayment(deps);
+
+		await handler("t1");
+
+		expect(deps.setCheckoutError).toHaveBeenCalledWith("Card payment failed");
+	});
 });

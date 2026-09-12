@@ -39,6 +39,7 @@ const Cart = ({
 	selectedTerminal,
 	setSelectedTerminal,
 	giftcard,
+	giftcardUsage,
 	onClearGiftcard,
 	transactionInProgress,
 	onManualUPCEntry,
@@ -281,6 +282,7 @@ const Cart = ({
 						giftcard={giftcard}
 						onClear={onClearGiftcard}
 						isProcessing={!!transactionInProgress}
+						usage={giftcardUsage}
 					/>
 					<Box
 						sx={{

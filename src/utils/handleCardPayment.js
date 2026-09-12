@@ -147,17 +147,16 @@ export default function createHandleCardPayment(deps) {
 		} catch (error) {
 			// Handle card payment error
 			setTransactionInProgress && setTransactionInProgress(false);
-			
-			// Show detailed error message
-			if (error?.decline_code) {
-				setCheckoutError &&
-					setCheckoutError(error.code + "\n" + error.message);
-				console.log("Throwing error from handleCardPayment:", error);
-			}
-			setCheckoutError &&
-				setCheckoutError(error.code + "\n" + error.message);
 
-			console.log("Throwing error from handleCardPayment:", error);
+			// Show detailed error message -- omit the code prefix when there isn't one. A
+			// Stripe decline carries `.code` (e.g. "card_declined"), but a plain network/JS
+			// error doesn't, and used to show cashiers a literal "undefined\n<message>" string.
+			setCheckoutError &&
+				setCheckoutError(
+					error?.code ? error.code + "\n" + error.message : error?.message || "Card payment failed",
+				);
+
+			console.log("Error from handleCardPayment:", error);
 		}
 	};
 }

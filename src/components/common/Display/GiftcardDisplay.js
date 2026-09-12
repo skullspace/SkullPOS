@@ -10,15 +10,18 @@ import { formatCAD } from "../../../utils/format";
 
 /**
  * GiftcardDisplay component
- * 
+ *
  * @param {Object} props - Component props
  * @param {Object} props.giftcard - Giftcard object with $id and balance
  * @param {Function} props.onClear - Callback when clearing giftcard
  * @param {boolean} props.isProcessing - Whether transaction is in progress
- * 
+ * @param {{applied: number, remaining: number}|null} [props.usage] - Set once this giftcard has
+ *   partially covered a sale (see checkout.js/retryCheckout.js) -- the amount actually applied
+ *   and what's still owed on the card, so the cashier isn't left guessing after a failed retry.
+ *
  * @returns {JSX.Element} Giftcard info display, or null if no giftcard
  */
-const GiftcardDisplay = ({ giftcard, onClear, isProcessing = false }) => {
+const GiftcardDisplay = ({ giftcard, onClear, isProcessing = false, usage = null }) => {
 	if (!giftcard) return null;
 
 	// Mask giftcard ID, showing only last 8 characters
@@ -40,6 +43,11 @@ const GiftcardDisplay = ({ giftcard, onClear, isProcessing = false }) => {
 			<div>
 				<strong>{giftcard.eventId ? "DJ Voucher" : "Giftcard"}:</strong> {maskGiftcardId(giftcard.$id)}
 				<div>Balance: {formatCAD(giftcard.balance || 0)}</div>
+				{usage && usage.remaining > 0 && (
+					<div>
+						Applied {formatCAD(usage.applied || 0)} -- {formatCAD(usage.remaining)} remaining on card
+					</div>
+				)}
 			</div>
 			<Button
 				size="small"

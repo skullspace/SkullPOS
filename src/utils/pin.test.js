@@ -24,6 +24,22 @@ describe("verifyPin", () => {
 
 		expect(result).toEqual({ ok: false });
 	});
+
+	test("a network/transport error (flaky connection, function unreachable) propagates instead of being swallowed as a wrong PIN", async () => {
+		const functions = {
+			createExecution: jest.fn().mockRejectedValue(new Error("Failed to fetch")),
+		};
+
+		await expect(verifyPin({ functions, pin: "1234" })).rejects.toThrow("Failed to fetch");
+	});
+
+	test("a malformed (non-JSON) response body propagates a parse error rather than a false wrong-PIN result", async () => {
+		const functions = {
+			createExecution: jest.fn().mockResolvedValue({ responseBody: "not valid json" }),
+		};
+
+		await expect(verifyPin({ functions, pin: "1234" })).rejects.toThrow();
+	});
 });
 
 describe("pin mode storage", () => {

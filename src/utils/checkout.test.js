@@ -208,6 +208,42 @@ describe("checkout", () => {
 		expect(deps.setGiftcard).toHaveBeenCalledWith(null);
 	});
 
+	test("giftcard: records the applied/remaining split via setGiftcardUsage (instead of it being discarded) before the card leg runs", async () => {
+		const deps = makeDeps({
+			getPaymentMethod: jest.fn().mockReturnValue("giftcard"),
+			getGiftcard: jest.fn().mockReturnValue({ $id: "gc1", balance: 400 }),
+			getTotal: jest.fn().mockReturnValue(1000),
+		});
+		recordPayment.mockResolvedValue({ ok: true, remaining: 600 });
+		deps.handleCardPayment.mockResolvedValue(undefined); // card leg fails
+
+		await createCheckout(deps)();
+
+		// setGiftcardUsage must reflect the real remaining balance BEFORE handleCardPayment is
+		// invoked -- this is what lets a retry (see retryCheckout.js) charge the correct
+		// remainder instead of recomputing from the full cart total.
+		expect(deps.setGiftcardUsage).toHaveBeenCalledWith({ applied: 400, remaining: 600 });
+		// card leg failed -- handleCardPayment already reported its own error, giftcard usage
+		// must NOT be cleared (the giftcard leg is still valid and unretried)
+		expect(deps.setGiftcardUsage).not.toHaveBeenCalledWith(null);
+		expect(deps.setGiftcard).not.toHaveBeenCalledWith(null);
+	});
+
+	test("giftcard partial + card handler throwing unexpectedly: still surfaces an error instead of leaving the UI stuck with no message", async () => {
+		const deps = makeDeps({
+			getPaymentMethod: jest.fn().mockReturnValue("giftcard"),
+			getGiftcard: jest.fn().mockReturnValue({ $id: "gc1", balance: 400 }),
+			getTotal: jest.fn().mockReturnValue(1000),
+		});
+		recordPayment.mockResolvedValue({ ok: true, remaining: 600 });
+		deps.handleCardPayment.mockRejectedValue(new Error("boom"));
+
+		await createCheckout(deps)();
+
+		expect(deps.setCheckoutError).toHaveBeenCalledWith("boom");
+		expect(deps.setTransactionInProgress).toHaveBeenCalledWith(false);
+	});
+
 	test("giftcard: a clean apply failure surfaces the server's real error and never touches the card", async () => {
 		const deps = makeDeps({
 			getPaymentMethod: jest.fn().mockReturnValue("giftcard"),

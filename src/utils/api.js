@@ -260,31 +260,53 @@ export function useAppwrite() {
 
 	const [currentUser, setCurrentUser] = useState(null);
 	const [pinMode, setPinModeState] = useState(() => getPinMode());
+	// Set only when the last session check failed for a reason OTHER than "you're not logged
+	// in" -- a transient network/timeout error on flaky venue WiFi, say. The caller can show a
+	// retryable banner instead of the cashier being silently bounced to /login mid-shift.
+	const [sessionError, setSessionError] = useState(null);
+
+	/**
+	 * Check the active session. Redirects to /login only on an actual authentication failure
+	 * (Appwrite responds 401 -- there really is no valid session), never on a network/timeout
+	 * error, which leaves whatever session state we already had alone and just surfaces
+	 * `sessionError` so the UI can offer a retry instead of yanking an already-valid cashier
+	 * session out from under them.
+	 */
+	const checkSession = useCallback(async () => {
+		try {
+			const acct = await account.get();
+			setCurrentUser(acct);
+			setSessionError(null);
+			console.log("session active");
+		} catch (err) {
+			const isAuthFailure = err?.code === 401;
+
+			if (!isAuthFailure) {
+				console.error("Error checking session (keeping current session):", err);
+				setSessionError("Couldn't verify your session -- check your connection and try again.");
+				return;
+			}
+
+			setCurrentUser(null);
+			setSessionError(null);
+			try {
+				// Redirect to login if not on the login page itself
+				if (!window.location.pathname.startsWith("/login")) {
+					console.log("no active session");
+					window.location.href = "/login";
+				}
+			} catch (e) {
+				console.error("error creating session", e);
+			}
+		}
+	}, [account]);
 
 	/**
 	 * Check active session on component mount
-	 * Redirects to login if no active session
 	 */
 	useEffect(() => {
-		(async () => {
-			try {
-				const acct = await account.get();
-				setCurrentUser(acct);
-				console.log("session active");
-			} catch (err) {
-				setCurrentUser(null);
-				try {
-					// Redirect to login if not on the login page itself
-					if (!window.location.pathname.startsWith("/login")) {
-						console.log("no active session");
-						window.location.href = "/login";
-					}
-				} catch (e) {
-					console.error("error creating session", e);
-				}
-			}
-		})();
-	}, [account]);
+		checkSession();
+	}, [checkSession]);
 
 	/**
 	 * Staff login via Google SSO (the Skullspace Google Workspace account).
@@ -432,6 +454,8 @@ export function useAppwrite() {
 		loginWithPin,
 		pinMode,
 		logout,
+		sessionError,
+		retrySessionCheck: checkSession,
 		uniqueId: ID.unique,
 		generateStripeConnectionToken,
 		functions,
