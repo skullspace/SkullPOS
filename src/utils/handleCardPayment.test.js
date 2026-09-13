@@ -65,8 +65,52 @@ describe("handleCardPayment", () => {
 
 		await handler("t1", false, 400);
 
-		expect(deps.chargeCard).toHaveBeenCalledWith(400, false);
+		expect(deps.chargeCard).toHaveBeenCalledWith(400, false, "t1");
 		expect(deps.getTotal).not.toHaveBeenCalled();
+	});
+
+	test("threads the transactionId into chargeCard, on a first attempt and on a retry", async () => {
+		// Stripe-CreatePaymentIntent stamps this into the intent's metadata, and
+		// Transaction-RecordPayment refuses any stripe leg whose intent doesn't carry
+		// it -- by which point the money is already captured. Without it, no card sale
+		// can be recorded at all.
+		const deps = makeDeps({ chargeCard: jest.fn().mockResolvedValue({ id: "pi_1", amount: 1000 }) });
+		recordPaymentWithRetry.mockResolvedValue({ ok: true, remaining: 0, status: "complete" });
+		const handler = createHandleCardPayment(deps);
+
+		await handler("txn_abc");
+		await handler("txn_abc", true);
+
+		expect(deps.chargeCard).toHaveBeenNthCalledWith(1, 1000, false, "txn_abc");
+		expect(deps.chargeCard).toHaveBeenNthCalledWith(2, 1000, true, "txn_abc");
+	});
+
+	test("a tipped sale records the TIP-EXCLUSIVE base, not what Stripe captured", async () => {
+		// update_payment_intent lets the reader add a tip, so the intent comes back as
+		// base + tip. The leg is what gets subtracted from payment_due and must stay the
+		// base; the tip travels separately on Transactions.tip. Recording 850 here would
+		// overshoot payment_due and be refused.
+		const deps = makeDeps({
+			getTotal: jest.fn().mockReturnValue(750),
+			chargeCard: jest
+				.fn()
+				.mockResolvedValue({ id: "pi_tip", amount: 850, amount_details: { tip: { amount: 100 } } }),
+		});
+		recordPaymentWithRetry.mockResolvedValue({ ok: true, remaining: 0, status: "complete" });
+		const handler = createHandleCardPayment(deps);
+
+		await handler("txn_tip");
+
+		expect(recordPaymentWithRetry).toHaveBeenCalledWith({
+			functions: deps.functions,
+			transactionId: "txn_tip",
+			method: "stripe",
+			amount: 750,
+			paymentIntentId: "pi_tip",
+		});
+		expect(deps.setStripeAlert).toHaveBeenCalledWith(
+			expect.objectContaining({ message: "Payment Successful: $8.50 Total: $7.50 + Tip: $1.00" }),
+		);
 	});
 
 	test("card charged but recording cleanly failed: flags unconfirmed, never claims success", async () => {

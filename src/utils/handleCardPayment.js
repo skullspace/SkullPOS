@@ -85,15 +85,33 @@ export default function createHandleCardPayment(deps) {
 		setCardChargeUnconfirmed && setCardChargeUnconfirmed(false);
 
 		try {
-			// Call Stripe Terminal to charge card
-			const result = await chargeCard(total, retrying);
+			// Call Stripe Terminal to charge card. The transaction id is threaded all the
+			// way down into Stripe-CreatePaymentIntent's body so the intent carries
+			// `metadata.transactionId` -- Transaction-RecordPayment refuses any stripe leg
+			// whose intent doesn't, and by then the money is already captured.
+			const result = await chargeCard(total, retrying, transactionId);
 
 			// Record the payment server-side -- verified independently against
 			// the real Stripe API there, not trusted from this client response.
-			// Retries on a transport failure (safe -- Transaction-RecordPayment
-			// rejects a leg that's already been applied), but if it still
-			// fails, the card was charged for real: don't claim success, and
-			// don't let staff blindly retry (which would re-charge it).
+			//
+			// `amount` here is deliberately TIP-EXCLUSIVE: it's what the sale is
+			// for, not what the reader ended up capturing. With
+			// `update_payment_intent: true` (see stripe.js) the customer can add a
+			// tip on the reader, so the PaymentIntent's own `amount` is
+			// base + tip while this leg -- which is what gets subtracted from
+			// `payment_due` -- must stay the base. The tip travels separately, on
+			// Transactions.tip, which the server derives from
+			// `paymentIntent.amount_details.tip.amount`. Sending base + tip here
+			// instead would overshoot payment_due and be rejected.
+			//
+			// Retries on a transport failure. recordPaymentWithRetry generates one
+			// `legId` of its own and holds it constant across its attempts (it is
+			// NOT supplied from here), so the server can recognise a redelivery of
+			// THIS leg rather than appending it twice. That dedupe only exists once
+			// Transaction-RecordPayment's legId handling is deployed -- POS and that
+			// function are one atomic deploy. If every attempt still fails, the card
+			// was charged for real: don't claim success, and don't let staff blindly
+			// retry (which would re-charge it).
 			let recordError = null;
 			try {
 				const recordResult = await recordPaymentWithRetry({

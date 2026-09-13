@@ -159,9 +159,15 @@ const SelfCheckout = () => {
 				// no cashier to notice a frozen "please tap your card" screen and
 				// cancel it by hand, so give up on our own after PAYMENT_TIMEOUT_MS
 				// and release the reader's collect-payment wait.
-				chargeCard: (amount, retrying) =>
+				//
+				// EVERY argument handleCardPayment passes must be forwarded. This
+				// wrapper used to take only (amount, retrying), silently dropping
+				// the transactionId -- and since Stripe-CreatePaymentIntent now
+				// REQUIRES it (stripe.js getChargeID throws without one), the
+				// kiosk threw before minting an intent and took no payment at all.
+				chargeCard: (amount, retrying, chargeTransactionId) =>
 					Promise.race([
-						chargeCard(amount, retrying),
+						chargeCard(amount, retrying, chargeTransactionId),
 						new Promise((_, reject) =>
 							setTimeout(() => {
 								stopTransactionInProgress();
@@ -217,9 +223,12 @@ const SelfCheckout = () => {
 	const membershipHandleCardPayment = useMemo(
 		() =>
 			createHandleCardPayment({
-				chargeCard: (amount, retrying) =>
+				// Same three-argument forwarding as the shop flow above -- membership
+				// dues are card-only too, so a dropped transactionId means the dues
+				// payment throws before any intent exists.
+				chargeCard: (amount, retrying, chargeTransactionId) =>
 					Promise.race([
-						chargeCard(amount, retrying),
+						chargeCard(amount, retrying, chargeTransactionId),
 						new Promise((_, reject) =>
 							setTimeout(() => {
 								stopTransactionInProgress();

@@ -5,7 +5,13 @@ import { ProcessingModal, ErrorModal, CashPaymentModal, SuccessModal } from "../
 import AlertNotification from "../common/Alert/Alert";
 import { Box, Chip, InputAdornment, Stack, TextField } from "@mui/material";
 import SearchIcon from "@mui/icons-material/Search";
-import { useAppwrite } from "../../utils/api";
+import {
+	useAppwrite,
+	ACTIVE_EVENT_OK,
+	ACTIVE_EVENT_UNAVAILABLE,
+	SETTINGS_OK,
+	SETTINGS_PENDING,
+} from "../../utils/api";
 import SalesReport from "./salesReport";
 import TransactionsView from "./transactionsView";
 import ManageItemsView from "./manageItemsView";
@@ -28,7 +34,121 @@ import { recordPaymentWithRetry, describeUnknownPaymentFailure } from "../../uti
 import { setTransactionStatus } from "../../utils/transactionStatus";
 import { setItemEnabled } from "../../utils/itemVisibility";
 import { parseDollarsToCents } from "../../utils/cashTender";
+import { computeTotal } from "../../utils/cartTotal";
 import { isWithinBarHours } from "../../utils/barHours";
+
+// How often the active event is re-fetched. The realtime subscription on the Events collection
+// below can't carry this on its own: that subscription is permission-gated exactly like the read
+// was, so it never fires for the anonymous PIN session the register runs on, and a function
+// execution can't be subscribed to at all. Without the poll, an admin toggling sellsAlcohol or
+// moving the bar hours mid-event would never reach the till. Ticketing-ActiveEvent is a cheap,
+// side-effect-free read, so polling it is fine.
+const ACTIVE_EVENT_POLL_MS = 60000;
+
+// State before the first lookup has answered. Deliberately NOT "ok with no event": until the
+// server has actually spoken we don't know whether the bar is open, and pretending we do is the
+// bug this whole path exists to prevent.
+const ACTIVE_EVENT_PENDING = { status: "pending", event: null, error: null };
+
+/**
+ * Admin kill-switch states. UNKNOWN is not a synonym for OFF -- see readAlcoholOverride.
+ * PENDING behaves like UNKNOWN (alcohol hidden, gate not authoritative) but is the expected
+ * state for the first second of every boot, so it raises no alarm.
+ */
+export const ALCOHOL_OVERRIDE_ON = "on";
+export const ALCOHOL_OVERRIDE_OFF = "off";
+export const ALCOHOL_OVERRIDE_UNKNOWN = "unknown";
+export const ALCOHOL_OVERRIDE_PENDING = "pending";
+
+// Values in barData/config that mean "the kill switch is not engaged". Anything else that is
+// actually present -- "true", or a typo nobody can parse -- engages it. A value we can't read
+// must not be read as permission to sell.
+const OVERRIDE_OFF_VALUES = new Set(["", "false", "0", "no", "off"]);
+
+/**
+ * Reads the admin alcohol kill switch (barData/config's "alcohol_override_disabled") into a
+ * THREE-state answer.
+ *
+ * P1-13: this used to be `settings?.alcohol_override_disabled === "true"`. `settings` starts
+ * null and stays null when refreshData's fetch fails (it swallows the error), so
+ * `undefined === "true"` is false and an unreachable config read as "override off" =
+ * ALCOHOL PERMITTED. That is the wrong direction for a compliance kill switch, and it sat two
+ * lines above an event gate that was deliberately written to fail the other way.
+ *
+ * The distinction that matters: a config we successfully READ which simply has no
+ * alcohol_override_disabled row is a real answer ("nobody ever turned it on" = off). A config
+ * we could not read at all is not an answer, and must hide alcohol.
+ *
+ * @param {Object|null} settings - the key/value config map, or null if never loaded
+ * @param {string} settingsStatus - SETTINGS_PENDING | SETTINGS_OK | SETTINGS_UNAVAILABLE
+ * @returns {"on"|"off"|"unknown"|"pending"}
+ */
+export function readAlcoholOverride(settings, settingsStatus) {
+	if (settingsStatus === SETTINGS_PENDING) return ALCOHOL_OVERRIDE_PENDING;
+	if (settingsStatus !== SETTINGS_OK || !settings) return ALCOHOL_OVERRIDE_UNKNOWN;
+	const raw = settings.alcohol_override_disabled;
+	// Config read fine, the row isn't there: the switch was never set.
+	if (raw === undefined || raw === null) return ALCOHOL_OVERRIDE_OFF;
+	if (OVERRIDE_OFF_VALUES.has(String(raw).trim().toLowerCase())) return ALCOHOL_OVERRIDE_OFF;
+	return ALCOHOL_OVERRIDE_ON;
+}
+
+/**
+ * Resolves the alcohol gate into the two separate questions the UI needs answered:
+ *
+ *   allowed -- may alcohol be shown/sold right now? Fails CLOSED: unknown means hidden.
+ *   known   -- is that answer authoritative enough to act on destructively? Only then may
+ *              alcohol already sitting in a cart be pulled back out.
+ *
+ * Those have to be separate. The selling grid hiding alcohol on an unknown gate is a safe,
+ * reversible precaution; emptying a customer's cart mid-sale because a single poll timed out
+ * is not. An override we actually READ as ON is a local, authoritative signal, so it satisfies
+ * both; an override we could not read is authoritative for neither.
+ *
+ * `unavailableReason` names which half we couldn't establish, so the banner can say something
+ * true rather than always blaming the event service.
+ *
+ * @param {Object} params
+ * @param {{status: string, event: Object|null}} params.activeEventState - fetchActiveEvent result
+ * @param {"on"|"off"|"unknown"} params.alcoholOverride - admin kill switch, see readAlcoholOverride
+ * @param {Date} params.now
+ * @returns {{allowed: boolean, known: boolean, unavailable: boolean, unavailableReason: string|null}}
+ */
+export function resolveAlcoholGate({ activeEventState, alcoholOverride, now }) {
+	const status = activeEventState?.status;
+	const event = activeEventState?.event ?? null;
+
+	const overrideOn = alcoholOverride === ALCOHOL_OVERRIDE_ON;
+	// Anything that isn't an explicit on/off -- including an omitted argument -- is unknown.
+	const overrideUnknown = !overrideOn && alcoholOverride !== ALCOHOL_OVERRIDE_OFF;
+
+	// A Ticketing-ActiveEvent build that predates the sellsAlcohol/barOpenTime/barCloseTime
+	// allowlist returns a perfectly valid 200 with those fields simply absent. isWithinBarHours
+	// then reads undefined as false and alcohol stays hidden -- but the gate would call itself
+	// KNOWN, arm the cart-stripping effect, and fire no banner. An event document with no
+	// sellsAlcohol field at all is a server we can't get an alcohol answer out of, not a
+	// "no alcohol tonight".
+	const eventMissingAlcoholFields = status === ACTIVE_EVENT_OK && !!event && event.sellsAlcohol === undefined;
+
+	let unavailableReason = null;
+	if (status === ACTIVE_EVENT_UNAVAILABLE) unavailableReason = "event-lookup";
+	else if (eventMissingAlcoholFields) unavailableReason = "event-fields";
+	else if (overrideUnknown && alcoholOverride === ALCOHOL_OVERRIDE_UNKNOWN) unavailableReason = "override";
+
+	return {
+		allowed: !overrideOn && !overrideUnknown && isWithinBarHours(event, now),
+		known: overrideOn || (!overrideUnknown && status === ACTIVE_EVENT_OK && !eventMissingAlcoholFields),
+		unavailable: unavailableReason !== null,
+		unavailableReason,
+	};
+}
+
+/** Banner text for each way the gate can fail to establish an answer. */
+const GATE_UNAVAILABLE_LABELS = {
+	"event-lookup": "Alcohol gate unavailable -- can't reach the event service",
+	"event-fields": "Alcohol gate unavailable -- the event service isn't reporting bar hours",
+	override: "Alcohol gate unavailable -- can't read the alcohol override setting",
+};
 
 
 const POS = () => {
@@ -45,6 +165,7 @@ const POS = () => {
 		refreshData,
 		fetchActiveEvent,
 		settings,
+		settingsStatus,
 		uniqueId,
 		currentUser,
 		functions,
@@ -110,8 +231,35 @@ const POS = () => {
 		setActiveSplit(null);
 	}, []);
 
+	// A split leg's card charge went through but recording it didn't. Real money moved against
+	// a sale that has no leg for it.
+	//
+	// Dropping the panel is NOT enough on its own: the cart behind it is still fully populated
+	// and Checkout goes live again, so the cashier who was just told "do NOT charge again" can
+	// ring the identical cart a second time. Latch the whole till exactly the way an unconfirmed
+	// single-card charge does -- cart cleared, ErrorModal up with Retry hidden (hideRetry reads
+	// cardChargeUnconfirmed) -- and leave the transaction PENDING so it shows up in the
+	// Transactions view to be reconciled rather than being cancelled out from under real money.
+	const handleSplitUnconfirmedCharge = useCallback((unconfirmed) => {
+		const { amount, paymentIntentId } = unconfirmed || {};
+		setActiveSplit(null);
+		clearCart();
+		setTransactionInProgress(false);
+		setCardChargeUnconfirmed(true);
+		setCheckoutError(
+			`Card was charged ${formatCAD(amount || 0)} on a split sale but the payment could not be saved. ` +
+				`Do not charge again -- reconcile manually against payment ${paymentIntentId || "(unknown)"} ` +
+				`in the Transactions view.`,
+		);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
 	const localHandleCancelStripePayment = useCallback(() => {
-		handleCancelStripePayment();
+		// Scoped to THIS transaction: the ErrorModal's Close runs this for every failure,
+		// cash and giftcard included, and stripe.js's intent refs outlive the sale they
+		// were minted for -- unscoped, a cash-leg failure could ask Stripe to cancel the
+		// PREVIOUS customer's already-succeeded intent.
+		handleCancelStripePayment(transactionId.current);
 		setTransactionInProgress(false);
 
 		setTransactionStatus({
@@ -123,7 +271,13 @@ const POS = () => {
 
 	const disableItem = useCallback(
 		(itemId, toEnable = false) => {
-			setItemEnabled({ functions, itemId, enabled: !!toEnable }).catch((err) =>
+			// `field` is REQUIRED here (P1-31). Item-SetEnabled defaults an omitted field to
+			// "enabled_menu", which gates the customer-facing menu boards -- but what this
+			// register shows is gated on the OTHER flag (item.js checks `enabledPOS`, mapped
+			// from `enabled_pos`). Omitting it meant the 86 gesture pulled the item from the
+			// public menu and left it ringing up here, which is the opposite of what the
+			// bartender long-pressing it is asking for.
+			setItemEnabled({ functions, itemId, enabled: !!toEnable, field: "enabled_pos" }).catch((err) =>
 				console.error("Failed to update item enabled state", err),
 			);
 			let itemName = items.find((item) => item.$id === itemId)?.name || "Unknown Item";
@@ -147,7 +301,12 @@ const POS = () => {
 	// says whether alcohol is being sold at all today and, if so, during what bar-hours
 	// window. No active event, or outside that window, hides alcohol automatically --
 	// re-checked every minute so it flips on/off at the boundary without a page reload.
-	const [activeEvent, setActiveEvent] = useState(null);
+	const [activeEventState, setActiveEventState] = useState(ACTIVE_EVENT_PENDING);
+	const activeEvent = activeEventState.event;
+	// Narrower than the alcohol gate's own `unavailable`: this one is specifically "we could
+	// not find out which event is running", which is what a DJ voucher needs to know. An
+	// unreadable alcohol override doesn't affect voucher scoping.
+	const activeEventUnavailable = activeEventState.status === ACTIVE_EVENT_UNAVAILABLE;
 	const [now, setNow] = useState(() => new Date());
 
 	// A transient session-check failure (flaky venue WiFi, a timeout) -- see api.js's
@@ -160,7 +319,18 @@ const POS = () => {
 	}, [sessionError, setStripeAlert]);
 
 	useEffect(() => {
-		fetchActiveEvent().then(setActiveEvent);
+		let cancelled = false;
+		const load = () => {
+			fetchActiveEvent().then((result) => {
+				if (!cancelled) setActiveEventState(result);
+			});
+		};
+		load();
+		const id = setInterval(load, ACTIVE_EVENT_POLL_MS);
+		return () => {
+			cancelled = true;
+			clearInterval(id);
+		};
 	}, [fetchActiveEvent]);
 
 	useEffect(() => {
@@ -170,13 +340,46 @@ const POS = () => {
 
 	// Admin-controlled kill switch (barData/config's "alcohol_override_disabled" row, set via
 	// the admin app) -- when on, alcohol is hidden here regardless of the event/bar-hours gate
-	// above, for a manual/emergency stop independent of any event configuration.
-	const alcoholOverrideDisabled = settings?.alcohol_override_disabled === "true";
-
-	const alcoholCurrentlyAllowed = useMemo(
-		() => !alcoholOverrideDisabled && isWithinBarHours(activeEvent, now),
-		[activeEvent, now, alcoholOverrideDisabled]
+	// above, for a manual/emergency stop independent of any event configuration. Read through
+	// readAlcoholOverride, which keeps "the admin didn't turn it on" apart from "we couldn't
+	// read the config at all" -- the second used to silently mean alcohol permitted (P1-13).
+	const alcoholOverride = useMemo(
+		() => readAlcoholOverride(settings, settingsStatus),
+		[settings, settingsStatus]
 	);
+
+	const {
+		allowed: alcoholCurrentlyAllowed,
+		known: alcoholGateKnown,
+		unavailable: alcoholGateUnavailable,
+		unavailableReason: alcoholGateUnavailableReason,
+	} = useMemo(
+		() => resolveAlcoholGate({ activeEventState, alcoholOverride, now }),
+		[activeEventState, now, alcoholOverride]
+	);
+
+	// The gate failing is a real operational problem -- alcohol is hidden and every DJ voucher
+	// is rejected -- and used to be visible only as a console.error on a device nobody looks at.
+	// Fire on the transition into (and back out of) the failed state, not every poll.
+	const activeEventErrorShownRef = useRef(null);
+	useEffect(() => {
+		if (alcoholGateUnavailable && activeEventErrorShownRef.current !== alcoholGateUnavailableReason) {
+			activeEventErrorShownRef.current = alcoholGateUnavailableReason;
+			const detail =
+				alcoholGateUnavailableReason === "event-lookup"
+					? activeEventState.error || "the active event could not be checked"
+					: alcoholGateUnavailableReason === "event-fields"
+						? "the event service returned an event with no bar-hours fields (Ticketing-ActiveEvent is out of date)"
+						: "the alcohol override setting could not be read from config";
+			setStripeAlert({
+				active: true,
+				message: `Alcohol gate unavailable -- ${detail}. Alcohol is hidden and DJ vouchers can't be validated until this clears.`,
+				type: "error",
+			});
+		} else if (!alcoholGateUnavailable) {
+			activeEventErrorShownRef.current = null;
+		}
+	}, [alcoholGateUnavailable, alcoholGateUnavailableReason, activeEventState.error, setStripeAlert]);
 
 	// Keeps a live ref of the cart so the realtime subscription below (subscribed once, not
 	// re-subscribed on every keystroke) can always check its CURRENT contents.
@@ -220,7 +423,7 @@ const POS = () => {
 				refreshData();
 			}
 			if (isEventChange) {
-				fetchActiveEvent().then(setActiveEvent);
+				fetchActiveEvent().then(setActiveEventState);
 			}
 			if (isItemOrCategoryChange) {
 				if (cartRef.current.length === 0) {
@@ -248,8 +451,13 @@ const POS = () => {
 	// If alcohol sales become disallowed (the override switches on, or the active event's bar
 	// hours end) while alcohol items are already sitting in the cart, pull them back out --
 	// a sale can't complete with alcohol in it once alcohol isn't allowed to be sold.
+	//
+	// Only on a KNOWN gate, though. A failed or still-pending active-event lookup hides alcohol
+	// from the grid (fail closed, cheap to undo) but must not reach into a cart that's already
+	// being rung up: a single timed-out poll would otherwise silently gut a customer's order
+	// mid-sale and blame the bar hours for it.
 	useEffect(() => {
-		if (alcoholCurrentlyAllowed) return;
+		if (alcoholCurrentlyAllowed || !alcoholGateKnown) return;
 		const remaining = cart.filter((cartItem) => !isAlcoholCartItem(cartItem, categories));
 		if (remaining.length === cart.length) return;
 		setCart(remaining);
@@ -259,7 +467,7 @@ const POS = () => {
 			type: "warning",
 		});
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [alcoholCurrentlyAllowed, categories]);
+	}, [alcoholCurrentlyAllowed, alcoholGateKnown, categories]);
 
 
 	// useCallback so this only gets a new identity when the cart or discount actually change --
@@ -267,19 +475,11 @@ const POS = () => {
 	// every render (e.g. from typing in the item search box) used to re-fire that effect for
 	// unrelated renders.
 	const calculateTotal = useCallback(() => {
-		let newTotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
-		if (appliedDiscount) {
-			let discountAmount =
-				appliedDiscount.type === "percent"
-					? (newTotal * (appliedDiscount.amount || 0)) / 100
-					: appliedDiscount.amount || 0;
-			discountAmount = Math.min(parseInt(discountAmount) || 0, newTotal);
-			setDiscount(discountAmount);
-			newTotal -= discountAmount;
-		} else {
-			setDiscount(0);
-		}
-		setTotal(parseInt(newTotal));
+		// The arithmetic itself lives in utils/cartTotal.js so it can be tested -- this
+		// only pushes the result into state. See that file for the clamping rules.
+		const { discount: discountAmount, total: newTotal } = computeTotal(cart, appliedDiscount);
+		setDiscount(discountAmount);
+		setTotal(newTotal);
 	}, [cart, appliedDiscount]);
 
 	// Barcode scanner keyboard capture
@@ -321,7 +521,20 @@ const POS = () => {
 						setStripeAlert({ active: true, message: "This voucher has been revoked", type: "error" });
 						return;
 					}
-					if (!activeEvent || activeEvent.$id !== found.eventId) {
+					// Still refuse the voucher when we couldn't check the event -- the server
+					// re-validates at checkout anyway -- but say which of the two it is, so the
+					// bartender isn't told a perfectly good voucher is for the wrong night.
+					if (!activeEvent) {
+						setStripeAlert({
+							active: true,
+							message: activeEventUnavailable
+								? "Can't check which event is running right now, so this voucher can't be validated -- try again in a moment"
+								: "This voucher is only valid during its own event",
+							type: "error",
+						});
+						return;
+					}
+					if (activeEvent.$id !== found.eventId) {
 						setStripeAlert({
 							active: true,
 							message: "This voucher is only valid during its own event",
@@ -358,7 +571,7 @@ const POS = () => {
 				});
 			}
 		},
-		[functions, setStripeAlert, activeEvent, appliedDiscount],
+		[functions, setStripeAlert, activeEvent, activeEventUnavailable, appliedDiscount],
 	);
 
 	const processBarcode = useMemo(
@@ -590,10 +803,13 @@ const POS = () => {
 		setCheckoutError("");
 
 		try {
-			// Retries on a transport failure -- safe for cash specifically
-			// (unlike a card leg, there's no external side effect a retry
-			// could double up on; Transaction-RecordPayment's own idempotency
-			// guard rejects a leg once the transaction is no longer pending).
+			// Retries on a transport failure. Safe because every attempt carries
+			// the same `legId` for the server to dedupe on -- NOT because the
+			// transaction's status would catch it: a full cash leg does flip the
+			// sale out of "pending", but a leg on a part-paid sale would not, and
+			// cash legs have no other uniqueness check at all. The dedupe lives in
+			// Transaction-RecordPayment; see the DEPLOY COUPLING note on
+			// recordPaymentWithRetry -- POS must not ship ahead of that function.
 			const result = await recordPaymentWithRetry({
 				functions,
 				transactionId: transactionId.current,
@@ -731,6 +947,19 @@ const POS = () => {
 						pb: 1,
 					}}
 				>
+					{/* Persistent, not just the dismissible alert: while this is up, alcohol is
+					    hidden because we couldn't CHECK the event, not because the bar is shut --
+					    the two used to be indistinguishable from behind the counter. */}
+					{alcoholGateUnavailable && (
+						<Chip
+							label={
+								GATE_UNAVAILABLE_LABELS[alcoholGateUnavailableReason] || "Alcohol gate unavailable"
+							}
+							color="error"
+							size="small"
+							sx={{ mb: 1 }}
+						/>
+					)}
 					<TextField
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
@@ -840,6 +1069,7 @@ const POS = () => {
 				activeSplit={activeSplit}
 				onSplitComplete={handleSplitComplete}
 				onSplitCancel={handleSplitCancel}
+				onSplitUnconfirmedCharge={handleSplitUnconfirmedCharge}
 			/>
 			<ProcessingModal
 				isProcessing={transactionInProgress}

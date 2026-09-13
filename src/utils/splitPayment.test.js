@@ -3,6 +3,7 @@ import {
 	recordPaymentWithRetry,
 	RecordPaymentUnknownError,
 	describeUnknownPaymentFailure,
+	describeCleanLegFailure,
 	derivePaymentLegs,
 } from "./splitPayment";
 
@@ -22,16 +23,30 @@ describe("recordPayment", () => {
 		});
 
 		expect(result).toEqual({ ok: true, remaining: 0, status: "complete" });
-		expect(functions.createExecution).toHaveBeenCalledWith({
-			functionId: "6a9c728a297df71f5919",
-			body: JSON.stringify({
-				transactionId: "t1",
-				method: "cash",
-				amount: 1000,
-				giftcardId: undefined,
-				paymentIntentId: undefined,
-			}),
+		// Updated: the body now also carries a `legId`. It used to assert the exact
+		// legId-less body, which encoded the assumption that the server could recognise
+		// a replayed leg from the transaction's own state alone -- it can't, on a
+		// part-paid split sale.
+		const [call] = functions.createExecution.mock.calls;
+		expect(call[0].functionId).toBe("6a9c728a297df71f5919");
+		expect(JSON.parse(call[0].body)).toEqual({
+			transactionId: "t1",
+			method: "cash",
+			amount: 1000,
+			legId: expect.any(String),
 		});
+	});
+
+	test("generates a legId when the caller doesn't supply one, and passes a supplied one through", async () => {
+		const functions = makeFunctionsClient({ ok: true, remaining: 0, status: "complete" });
+
+		await recordPayment({ functions, transactionId: "t1", method: "cash", amount: 100 });
+		await recordPayment({ functions, transactionId: "t1", method: "cash", amount: 100, legId: "leg-fixed" });
+
+		const [generated, supplied] = functions.createExecution.mock.calls.map((c) => JSON.parse(c[0].body).legId);
+		expect(generated).toEqual(expect.any(String));
+		expect(generated.length).toBeGreaterThan(0);
+		expect(supplied).toBe("leg-fixed");
 	});
 
 	test("returns an empty object when the response body is missing", async () => {
@@ -97,6 +112,87 @@ describe("recordPaymentWithRetry", () => {
 			paymentIntentId: "pi_1",
 		});
 		expect(functions.createExecution).toHaveBeenCalledTimes(3);
+	});
+
+	test("every retry re-sends the SAME legId so the server can recognise a replay", async () => {
+		// The retry exists for the case where the server committed the leg and the
+		// response never came back. A part-paid split sale is still "pending" with room
+		// left under payment_due, so nothing about the transaction's own state would
+		// stop a second identical leg being appended -- only this key would.
+		const functions = {
+			createExecution: jest
+				.fn()
+				.mockRejectedValueOnce(new Error("network down"))
+				.mockRejectedValueOnce(new Error("network down"))
+				.mockResolvedValueOnce({ responseBody: JSON.stringify({ ok: true, remaining: 3000, status: "pending" }) }),
+		};
+
+		await recordPaymentWithRetry(
+			{ functions, transactionId: "t1", method: "stripe", amount: 2000, paymentIntentId: "pi_1" },
+			{ attempts: 3, delayMs: 1 },
+		);
+
+		const legIds = functions.createExecution.mock.calls.map((c) => JSON.parse(c[0].body).legId);
+		expect(legIds).toHaveLength(3);
+		expect(legIds[0]).toEqual(expect.any(String));
+		expect(new Set(legIds).size).toBe(1);
+	});
+
+	test("two separate legs on the same sale get different legIds", async () => {
+		const functions = makeFunctionsClient({ ok: true, remaining: 1000, status: "pending" });
+
+		await recordPaymentWithRetry({ functions, transactionId: "t1", method: "cash", amount: 1000 });
+		await recordPaymentWithRetry({ functions, transactionId: "t1", method: "cash", amount: 1000 });
+
+		const legIds = functions.createExecution.mock.calls.map((c) => JSON.parse(c[0].body).legId);
+		expect(new Set(legIds).size).toBe(2);
+	});
+
+	test("the unknown-state error carries the legId, so a manual reconcile can match it", async () => {
+		const functions = { createExecution: jest.fn().mockRejectedValue(new Error("network down")) };
+
+		await expect(
+			recordPaymentWithRetry({ functions, transactionId: "t1", method: "giftcard", amount: 400, giftcardId: "gc1" }, { attempts: 2, delayMs: 1 }),
+		).rejects.toMatchObject({ name: "RecordPaymentUnknownError", legId: expect.any(String) });
+	});
+});
+
+describe("describeCleanLegFailure", () => {
+	test("a giftcard leg rejected AFTER the server debited it warns the balance may have moved", () => {
+		// Transaction-RecordPayment debits the card, then writes the leg in a separate
+		// call with no rollback. "Failed to update transaction" is the only clean
+		// rejection that happens on the far side of that debit.
+		const message = describeCleanLegFailure({
+			method: "giftcard",
+			amount: 2000,
+			error: "Failed to update transaction",
+		});
+		expect(message).toMatch(/may ALREADY have been reduced by \$20\.00/);
+		expect(message).toMatch(/check the card's balance before applying it again/);
+	});
+
+	test("every other giftcard rejection happens before the debit and is passed through untouched", () => {
+		for (const error of [
+			"This voucher has been revoked",
+			"This voucher is only valid during its own event",
+			"Amount 5000 exceeds giftcard balance 400",
+			"Giftcard not found",
+		]) {
+			expect(describeCleanLegFailure({ method: "giftcard", amount: 2000, error })).toBe(error);
+		}
+	});
+
+	test("non-giftcard legs are passed through untouched", () => {
+		expect(
+			describeCleanLegFailure({ method: "stripe", amount: 2000, error: "Failed to update transaction" }),
+		).toBe("Failed to update transaction");
+		expect(describeCleanLegFailure({ method: "cash", amount: 100, error: "Transaction is not pending" })).toBe(
+			"Transaction is not pending",
+		);
+	});
+
+	test("falls back to a generic message when the server gave none", () => {
+		expect(describeCleanLegFailure({ method: "cash", amount: 100 })).toBe("Failed to record payment");
 	});
 });
 

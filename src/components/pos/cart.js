@@ -55,6 +55,7 @@ const Cart = ({
 	activeSplit,
 	onSplitComplete,
 	onSplitCancel,
+	onSplitUnconfirmedCharge,
 }) => {
 	const [manualOpen, setManualOpen] = useState(false);
 	const [manualValue, setManualValue] = useState("");
@@ -309,6 +310,7 @@ const Cart = ({
 						terminalReady={terminalReady}
 						onComplete={onSplitComplete}
 						onCancel={onSplitCancel}
+						onUnconfirmedCharge={onSplitUnconfirmedCharge}
 					/>
 				) : (
 					<>

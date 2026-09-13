@@ -1,4 +1,5 @@
 jest.mock("./splitPayment", () => ({
+	...jest.requireActual("./splitPayment"),
 	recordPayment: jest.fn(),
 }));
 
@@ -185,7 +186,11 @@ describe("retryCheckout", () => {
 			createRetryCheckout(deps)();
 			await flush();
 
-			expect(deps.setCheckoutError).toHaveBeenCalledWith("Failed to retry giftcard");
+			// Updated: this used to assert the fixed string "Failed to retry giftcard",
+			// which threw away the server's actual reason -- including the one that says
+			// the giftcard may already have been debited. checkout.js's equivalent test
+			// already asserted the opposite for the first attempt; these now agree.
+			expect(deps.setCheckoutError).toHaveBeenCalledWith("giftcard balance changed");
 			expect(deps.handleCardPayment).not.toHaveBeenCalled();
 		});
 	});

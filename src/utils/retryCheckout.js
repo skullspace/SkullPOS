@@ -11,7 +11,7 @@
  * recompute from the full cart total / the giftcard's original (now-stale) balance, and never
  * re-apply the giftcard a second time.
  */
-import { recordPayment } from "./splitPayment";
+import { recordPayment, describeCleanLegFailure } from "./splitPayment";
 
 export default function createRetryCheckout(deps) {
 	const {
@@ -99,7 +99,15 @@ export default function createRetryCheckout(deps) {
 						amount: applyAmount,
 						giftcardId: gift.$id,
 					});
-					if (!result.ok) throw new Error(result.error || "Failed to apply giftcard");
+					if (!result.ok) {
+						throw new Error(
+							describeCleanLegFailure({
+								method: "giftcard",
+								amount: applyAmount,
+								error: result.error || "Failed to retry giftcard",
+							}),
+						);
+					}
 
 					// record what actually got applied so a *second* retry (if the card fails
 					// again) charges the real remainder, not the full total once more
@@ -127,7 +135,9 @@ export default function createRetryCheckout(deps) {
 					setTransactionInProgress && setTransactionInProgress(false);
 				} catch (err) {
 					console.error("Retry giftcard error", err);
-					setCheckoutError && setCheckoutError("Failed to retry giftcard");
+					// Surface the actual reason, not a fixed string -- it's the only thing that
+					// tells staff whether the card's balance may already have been debited.
+					setCheckoutError && setCheckoutError(err.message || "Failed to retry giftcard");
 					setTransactionInProgress && setTransactionInProgress(false);
 				}
 			})();

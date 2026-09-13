@@ -1,4 +1,4 @@
-import { recordPayment } from "./splitPayment";
+import { recordPayment, describeCleanLegFailure } from "./splitPayment";
 import { isTestEnvironment } from "./environment";
 
 const test = isTestEnvironment;
@@ -117,7 +117,18 @@ export default function createCheckout(deps) {
 						amount: applyAmount,
 						giftcardId: gift.$id,
 					});
-					if (!applyResult.ok) throw new Error(applyResult.error || "Failed to apply giftcard");
+					// describeCleanLegFailure, not the bare server string: the one failure that
+					// happens AFTER Transaction-RecordPayment has already debited the card
+					// reads like nothing happened, and staff re-apply it.
+					if (!applyResult.ok) {
+						throw new Error(
+							describeCleanLegFailure({
+								method: "giftcard",
+								amount: applyAmount,
+								error: applyResult.error || "Failed to apply giftcard",
+							}),
+						);
+					}
 				} catch (err) {
 					console.error("Error applying giftcard:", err);
 					setCheckoutError && setCheckoutError(err.message || "Failed to apply giftcard");

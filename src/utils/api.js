@@ -56,6 +56,71 @@ const config = {
 const PAGE_SIZE = 100;
 
 /**
+ * Ticketing-ActiveEvent. Its live $id is this literal slug, not a hex id.
+ */
+const ACTIVE_EVENT_FUNCTION_ID = "ticketing-active-event";
+
+/** fetchActiveEvent result states -- see parseActiveEventExecution. */
+export const ACTIVE_EVENT_OK = "ok";
+export const ACTIVE_EVENT_UNAVAILABLE = "unavailable";
+
+/**
+ * `settingsStatus` states for the barData/config read (refreshData).
+ *
+ * "pending" -- the first read hasn't answered yet.
+ * "ok"      -- `settings` reflects what the server actually has.
+ * "unavailable" -- the read failed. `settings` is null (never loaded) or stale.
+ */
+export const SETTINGS_PENDING = "pending";
+export const SETTINGS_OK = "ok";
+export const SETTINGS_UNAVAILABLE = "unavailable";
+
+function activeEventUnavailable(reason) {
+	return { status: ACTIVE_EVENT_UNAVAILABLE, event: null, error: `Could not check the active event: ${reason}` };
+}
+
+/**
+ * Turn a Ticketing-ActiveEvent execution into one of exactly two answers, which the caller
+ * must keep apart:
+ *
+ *   { status: "ok", event: {...} | null }   -- the server answered. A null event means
+ *                                              there genuinely is no event running tonight.
+ *   { status: "unavailable", event: null, error } -- we do NOT know. The lookup failed.
+ *
+ * Collapsing the second into the first is exactly the bug this replaced (a 401 on the old
+ * direct Events read read as "no event"), so every non-answer below is unavailable, never
+ * an empty event. An execution that is queued/processing/failed carries an empty
+ * responseBody, which would otherwise parse into a convincing-looking "no event".
+ *
+ * @param {Object} execution - Appwrite execution from functions.createExecution
+ * @returns {{status: string, event: Object|null, error: string|null}}
+ */
+export function parseActiveEventExecution(execution) {
+	if (!execution) return activeEventUnavailable("the function returned nothing");
+	if (execution.status !== "completed") {
+		return activeEventUnavailable(`the function did not run (status: ${execution.status || "unknown"})`);
+	}
+	if (execution.responseStatusCode !== 200) {
+		return activeEventUnavailable(`the function returned HTTP ${execution.responseStatusCode}`);
+	}
+
+	let payload;
+	try {
+		payload = JSON.parse(execution.responseBody || "");
+	} catch (err) {
+		return activeEventUnavailable("the response could not be read");
+	}
+
+	// `event` is always present on a success, including as an explicit null. Its absence means
+	// we got the function's own error body (or something else entirely), not an answer.
+	if (!payload || typeof payload !== "object" || !("event" in payload)) {
+		return activeEventUnavailable("the response was not in the expected shape");
+	}
+
+	return { status: ACTIVE_EVENT_OK, event: payload.event || null, error: null };
+}
+
+/**
  * Fetch every document in a collection matching the given queries,
  * paging through with a cursor instead of relying on a single limited
  * request (Appwrite defaults to a 25-document page when no limit is set,
@@ -120,7 +185,13 @@ export function useAppwrite() {
 	const [items, setItems] = useState([]);
 	const [discounts, setDiscounts] = useState([]);
 	const [data, setData] = useState(null);
-	
+	// "pending" until the first barData/config read answers, then "ok" or "unavailable".
+	// `data` alone can't carry this: it starts null and STAYS null when the read fails, so
+	// every consumer of `settings` read a failed fetch as "the setting isn't set" -- which,
+	// for the alcohol kill switch, means "override off" = alcohol permitted (P1-13). Callers
+	// need to be able to tell "the admin hasn't turned it on" from "we couldn't ask".
+	const [settingsStatus, setSettingsStatus] = useState(SETTINGS_PENDING);
+
 	// Initialize Appwrite clients (memoized to prevent recreation)
 	const client = useMemo(() => createClient(), []);
 	const databases = useMemo(() => new Databases(client), [client]);
@@ -211,33 +282,51 @@ export function useAppwrite() {
 				c[i.key] = i.value;
 			});
 			setData(c || {});
+			setSettingsStatus(SETTINGS_OK);
 		} catch (err) {
 			console.error("error getting data", err);
+			// Deliberately does NOT clear `data`: a config we read successfully five minutes
+			// ago is better than nothing. But the status flips so a consumer that must fail
+			// closed (the alcohol kill switch) knows this answer is stale/unavailable.
+			setSettingsStatus(SETTINGS_UNAVAILABLE);
 		}
 	}, [databases]);
+
+	const functions = useMemo(() => new Functions(client), [client]);
 
 	/**
 	 * Fetches the currently active event (isActive:true), if any -- used to gate the bar
 	 * menu's alcohol display on whether alcohol is actually being sold right now, per the
 	 * event's own sellsAlcohol flag and barOpenTime/barCloseTime window (set via the admin
-	 * app's Events screen). Returns null if there's no active event or the fetch fails, which
-	 * pos.js treats the same way -- alcohol stays hidden by default when this is unknown.
+	 * app's Events screen), and to scope DJ vouchers to their own event.
+	 *
+	 * This goes through Ticketing-ActiveEvent rather than reading the Events collection
+	 * directly: Events is readable by the admin team only, while the register runs on an
+	 * anonymous PIN session, so the direct read always 401'd and the old catch turned that
+	 * into "no event tonight" -- permanently hiding every alcohol item and rejecting every
+	 * DJ voucher. The function reads as the server and returns a field allowlist that
+	 * deliberately excludes the per-event revenue/cogs/profit columns.
+	 *
+	 * Never collapses a failure into "no event": see parseActiveEventExecution for the
+	 * two states this can return.
 	 */
 	const fetchActiveEvent = useCallback(async () => {
+		let execution;
 		try {
-			const result = await databases.listDocuments({
-				databaseId: config.databases.bar.id,
-				collectionId: config.databases.bar.collections.events,
-				queries: [Query.equal("isActive", true), Query.limit(1)],
+			execution = await functions.createExecution({
+				functionId: ACTIVE_EVENT_FUNCTION_ID,
+				body: JSON.stringify({}),
 			});
-			return result.documents?.[0] || null;
 		} catch (err) {
 			console.error("error fetching active event", err);
-			return null;
+			return activeEventUnavailable(err?.message || "the request failed");
 		}
-	}, [databases]);
-
-	const functions = useMemo(() => new Functions(client), [client]);
+		const result = parseActiveEventExecution(execution);
+		if (result.status === ACTIVE_EVENT_UNAVAILABLE) {
+			console.error("error fetching active event", result.error);
+		}
+		return result;
+	}, [functions]);
 
 	/**
 	 * Generate Stripe connection token via Appwrite Function
@@ -450,6 +539,7 @@ export function useAppwrite() {
 		refreshData,
 		fetchActiveEvent,
 		settings: data,
+		settingsStatus,
 		loginWithGoogle,
 		loginWithPin,
 		pinMode,

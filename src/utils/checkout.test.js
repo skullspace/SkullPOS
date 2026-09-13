@@ -1,4 +1,5 @@
 jest.mock("./splitPayment", () => ({
+	...jest.requireActual("./splitPayment"),
 	recordPayment: jest.fn(),
 }));
 
