@@ -2,6 +2,8 @@ import { useAppwrite } from "./api";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { loadStripeTerminal } from "@stripe/terminal-js";
 import { isTestEnvironment } from "./environment";
+import { STRIPE_MIN_CHARGE_CENTS } from "./giftcard";
+import { formatCAD } from "./format";
 
 const test = isTestEnvironment;
 
@@ -292,8 +294,15 @@ export function useStripe() {
 	 * Transactions.tip) -- see handleCardPayment.js.
 	 */
 	async function chargeCard(amountCents, retrying = false, transactionId = null) {
-		if (amountCents <= 50) {
-			throw new Error("Amount must be greater than 50 cents");
+		// Stripe's own floor. The giftcard flow now avoids landing here at all
+		// (planGiftcardLeg, P2-24), but the split panel can still be handed a small
+		// remainder -- so say what to do about it instead of echoing the SDK's wording at
+		// a cashier who has no idea which amount it means.
+		if (amountCents < STRIPE_MIN_CHARGE_CENTS) {
+			throw new Error(
+				`${formatCAD(amountCents)} is under the ${formatCAD(STRIPE_MIN_CHARGE_CENTS)} card minimum -- ` +
+					`take this remainder in cash instead.`,
+			);
 		}
 		if (!terminal.current) {
 			throw new Error("Stripe terminal not connected");

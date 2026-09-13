@@ -12,6 +12,7 @@
  * re-apply the giftcard a second time.
  */
 import { recordPayment, describeCleanLegFailure } from "./splitPayment";
+import { planGiftcardLeg } from "./giftcard";
 
 export default function createRetryCheckout(deps) {
 	const {
@@ -90,8 +91,18 @@ export default function createRetryCheckout(deps) {
 					return;
 				}
 
+				// Same plan as the first attempt (see checkout.js): a naive min(balance, total)
+				// can leave a 1-50c card remainder the reader refuses, which is what made Retry
+				// reproduce the original failure forever instead of getting the sale through.
+				const plan = planGiftcardLeg({ total: parseInt(getTotal ? getTotal() : 0) || 0, balance: gift.balance });
+				if (!plan.ok) {
+					setCheckoutError && setCheckoutError(plan.error);
+					setTransactionInProgress && setTransactionInProgress(false);
+					return;
+				}
+
 				try {
-					const applyAmount = Math.min(parseInt(gift.balance) || 0, parseInt(getTotal ? getTotal() : 0) || 0);
+					const applyAmount = plan.applyAmount;
 					const result = await recordPayment({
 						functions,
 						transactionId: transactionIdRef.current,

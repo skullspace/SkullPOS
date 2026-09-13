@@ -283,3 +283,99 @@ describe("checkout", () => {
 		expect(deps.setTransactionInProgress).toHaveBeenCalledWith(false);
 	});
 });
+
+/**
+ * P2-24. The giftcard flow has no cash branch: once the giftcard leg is recorded, the only way
+ * to finish the sale is the card, and the reader refuses anything at or under 50c. A remainder
+ * in that window therefore wedged the sale with the customer's card already debited, and the
+ * only button left (Close) cancelled the sale and credited the card back.
+ */
+describe("checkout: giftcard remainders below the card minimum", () => {
+	beforeEach(() => jest.clearAllMocks());
+
+	test("caps the giftcard leg so the card remainder is chargeable", async () => {
+		// The reported case: $6.50 cart with the 25% member discount = 488c, $4.50 on the card.
+		const deps = makeDeps({
+			getPaymentMethod: jest.fn().mockReturnValue("giftcard"),
+			getGiftcard: jest.fn().mockReturnValue({ $id: "gc1", balance: 450 }),
+			getTotal: jest.fn().mockReturnValue(488),
+		});
+		recordPayment.mockResolvedValue({ ok: true, remaining: 51 });
+		deps.handleCardPayment.mockResolvedValue({ id: "pi_1" });
+
+		await createCheckout(deps)();
+
+		// 437, not 450 -- 13c stays on the customer's card so the card leg clears 50c.
+		expect(recordPayment).toHaveBeenCalledWith(expect.objectContaining({ method: "giftcard", amount: 437 }));
+		expect(deps.handleCardPayment).toHaveBeenCalledWith("t1", false, 51);
+		expect(deps.setCheckoutError).not.toHaveBeenCalled();
+	});
+
+	test("refuses before debiting the card when the sale is too small to split at all", async () => {
+		const deps = makeDeps({
+			getPaymentMethod: jest.fn().mockReturnValue("giftcard"),
+			getGiftcard: jest.fn().mockReturnValue({ $id: "gc1", balance: 20 }),
+			getTotal: jest.fn().mockReturnValue(40),
+		});
+
+		await createCheckout(deps)();
+
+		// Nothing recorded: the giftcard is still worth $0.20 and the cashier can take the 40c
+		// in cash. Debiting first and failing on the card leg is what stranded the sale.
+		expect(recordPayment).not.toHaveBeenCalled();
+		expect(deps.handleCardPayment).not.toHaveBeenCalled();
+		expect(deps.setCheckoutError).toHaveBeenCalledWith(expect.stringMatching(/card minimum/));
+		expect(deps.setTransactionInProgress).toHaveBeenLastCalledWith(false);
+	});
+
+	test("a comfortable remainder is untouched -- the whole balance is still applied", async () => {
+		const deps = makeDeps({
+			getPaymentMethod: jest.fn().mockReturnValue("giftcard"),
+			getGiftcard: jest.fn().mockReturnValue({ $id: "gc1", balance: 400 }),
+			getTotal: jest.fn().mockReturnValue(1000),
+		});
+		recordPayment.mockResolvedValue({ ok: true, remaining: 600 });
+		deps.handleCardPayment.mockResolvedValue({ id: "pi_1" });
+
+		await createCheckout(deps)();
+
+		expect(recordPayment).toHaveBeenCalledWith(expect.objectContaining({ method: "giftcard", amount: 400 }));
+	});
+});
+
+/**
+ * P2-25. `changeDue` was set only by the cash path and cleared only by the SuccessModal's Close
+ * button, so dismissing that modal any other way (backdrop tap, Escape) left it set and the
+ * NEXT sale's success modal showed a change amount for a card payment.
+ */
+describe("checkout: change due from the previous sale", () => {
+	beforeEach(() => jest.clearAllMocks());
+
+	test.each(["cash", "stripe", "giftcard", "split"])(
+		"clears it at the start of a %s sale, before anything can display it",
+		async (method) => {
+			const deps = makeDeps({
+				getPaymentMethod: jest.fn().mockReturnValue(method),
+				getGiftcard: jest.fn().mockReturnValue({ $id: "gc1", balance: 5000 }),
+				setChangeDue: jest.fn(),
+			});
+			recordPayment.mockResolvedValue({ ok: true, remaining: 0 });
+
+			await createCheckout(deps)();
+
+			expect(deps.setChangeDue).toHaveBeenCalledWith(0);
+		},
+	);
+
+	test("clears it even when the transaction itself fails to create", async () => {
+		const deps = makeDeps({
+			getPaymentMethod: jest.fn().mockReturnValue("cash"),
+			setChangeDue: jest.fn(),
+			databases: { createDocument: jest.fn().mockRejectedValue(new Error("db down")) },
+		});
+
+		await expect(createCheckout(deps)()).rejects.toThrow("db down");
+
+		expect(deps.setChangeDue).toHaveBeenCalledWith(0);
+	});
+});

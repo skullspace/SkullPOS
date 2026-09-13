@@ -157,10 +157,39 @@ export function describeCleanLegFailure({ method, amount, error }) {
 }
 
 /**
- * Returns the list of payment legs for a transaction, for display (the
- * refund confirmation dialog, the sales report). New transactions carry
- * this directly in `payments`; older ones predate that and have only the
- * single-method legacy fields -- synthesize one leg from those instead.
+ * Kept in sync by hand with the identical copies in
+ * AppwriteFunctions/functions/{Sales-Report,Stripe-RefundPayment,Admin-RollupEventSales,
+ * Transaction-EmailReceipt}/src/paymentLegs.js -- every consumer that needs to know how a
+ * transaction was actually paid carries its own copy, since the Appwrite functions deploy
+ * independently of each other and of this client.
+ *
+ * This one is the client's, and it is the copy the operator READS BEFORE CONFIRMING A REFUND
+ * (transactionsView.js), while Stripe-RefundPayment's copy decides what actually reverses. The
+ * two disagreeing is the whole hazard: this file drifted behind the server copies once already
+ * (P2-29) and showed less than what would be reversed. `paymentLegs.fixtures.js` is the shared
+ * case table both sides assert against -- change the body here and there together, and run the
+ * fixtures on both.
+ *
+ * Returns the list of payment legs for a transaction: {method, amount, giftcardId?,
+ * stripeId?}[]. New transactions (written by Transaction-RecordPayment) carry this directly in
+ * `payments`. Older ones predate that and have only the single-method legacy fields --
+ * synthesize legs from those instead, so nothing needs a data migration.
+ *
+ * `transaction.total` is confirmed (by inspecting real pre-migration rows) to already be net of
+ * `discount` and exclusive of `tip` -- both are tracked/reported as their own separate fields
+ * project-wide -- so neither needs subtracting here.
+ *
+ * The card/stripe leg used to be derived from `payment_due`, which is 0 on every transaction the
+ * (now-retired) legacy completion path finished, silently reporting $0 of card revenue for a
+ * real charge. Real legacy rows show `payment_due` reliably held "whatever wasn't covered by the
+ * giftcard leg" right up until completion, so it's still the most accurate source for the card
+ * amount *when it's actually populated* -- this only falls back to deriving the amount from
+ * `total` when `payment_due` looks stale/zeroed (the actual bug), rather than discarding it
+ * outright. This also naturally supports the legacy system's rare "giftcard + card + cash"
+ * 3-way split (where the card only covered part of what was left after the giftcard, and the
+ * remaining balance was cash): whatever isn't accounted for by the giftcard and (if present)
+ * stripe leg found is synthesized as a cash leg -- not just when NO other leg was found at all,
+ * which previously dropped that remainder silently.
  *
  * @returns {Array<{method: string, amount: number, giftcardId?: string, stripeId?: string}>}
  */
@@ -175,20 +204,35 @@ export function derivePaymentLegs(transaction) {
 	}
 
 	const legs = [];
+	let remaining = parseInt(transaction.total) || 0;
 
+	// Keyed off `giftcard_amount` ALONE, never off the relationship as well. Requiring both is
+	// what buried $458.25 of gift-card redemptions in the cash bucket (P1-3): of the 77 rows
+	// carrying a positive `giftcard_amount`, not one has a non-empty `giftcards` relationship --
+	// nothing has ever written that attribute -- so `giftcardIds.length > 0 && ...` was false on
+	// every legacy row, the leg was skipped, and the whole amount fell through to the cash leg
+	// synthesized from the remainder below. The card id is attached when the relationship does
+	// carry one and simply omitted when it does not: a giftcard leg with no id still buckets the
+	// revenue correctly, and Stripe-RefundPayment reports it as needing a manual credit instead of
+	// handing the customer cash for a gift-card payment.
 	const giftcardIds = Array.isArray(transaction.giftcards) ? transaction.giftcards : [];
 	const giftcardAmount = parseInt(transaction.giftcard_amount) || 0;
-	if (giftcardIds.length > 0 && giftcardAmount > 0) {
-		const giftcardId = typeof giftcardIds[0] === "object" ? giftcardIds[0].$id : giftcardIds[0];
-		legs.push({ method: "giftcard", amount: giftcardAmount, giftcardId });
+	if (giftcardAmount > 0) {
+		const rawId = giftcardIds.length > 0 ? giftcardIds[0] : null;
+		const giftcardId = rawId && typeof rawId === "object" ? rawId.$id : rawId;
+		legs.push({ method: "giftcard", amount: giftcardAmount, ...(giftcardId ? { giftcardId } : {}) });
+		remaining -= giftcardAmount;
 	}
 
 	if (transaction.stripe_id) {
-		legs.push({ method: "stripe", amount: parseInt(transaction.payment_due) || 0, stripeId: transaction.stripe_id });
+		const recordedDue = parseInt(transaction.payment_due) || 0;
+		const stripeAmount = recordedDue > 0 ? Math.min(recordedDue, Math.max(remaining, 0)) : Math.max(remaining, 0);
+		legs.push({ method: "stripe", amount: stripeAmount, stripeId: transaction.stripe_id });
+		remaining -= stripeAmount;
 	}
 
-	if (legs.length === 0) {
-		legs.push({ method: "cash", amount: parseInt(transaction.payment_due) || 0 });
+	if (remaining > 0) {
+		legs.push({ method: "cash", amount: remaining });
 	}
 
 	return legs;

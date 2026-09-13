@@ -12,7 +12,7 @@
  * that a failure NEVER comes back looking like an answer.
  */
 
-import { parseActiveEventExecution, ACTIVE_EVENT_OK, ACTIVE_EVENT_UNAVAILABLE } from "./api";
+import { parseActiveEventExecution, normalizePosItem, ACTIVE_EVENT_OK, ACTIVE_EVENT_UNAVAILABLE } from "./api";
 
 /** The full 12-key projection Ticketing-ActiveEvent returns for a live event. */
 const liveEvent = {
@@ -119,5 +119,47 @@ describe("parseActiveEventExecution", () => {
 	it("reports a missing execution as unavailable", () => {
 		expect(parseActiveEventExecution(undefined).status).toBe(ACTIVE_EVENT_UNAVAILABLE);
 		expect(parseActiveEventExecution(null).event).toBeNull();
+	});
+});
+
+/**
+ * The POS charges `sale_price` and nothing else. pos_items also carries `self_pricing`, which
+ * the menu board displays as its own price (aliased to `selfcheck_price`) while no POS code
+ * path reads it -- so an operator who sets it re-prices the board without re-pricing the till,
+ * with nothing anywhere to warn them (P2-30). These pin the POS end of that: the price the
+ * register uses comes from `sale_price`, and `self_pricing` does not get a vote.
+ */
+describe("normalizePosItem", () => {
+	const redBull = {
+		$id: "item_redbull",
+		name: "Red Bull",
+		sale_price: 400,
+		enabled_pos: true,
+		contains_alcohol: false,
+	};
+
+	it("maps the pos_items field names onto the ones the register reads", () => {
+		expect(normalizePosItem(redBull)).toMatchObject({
+			$id: "item_redbull",
+			price: 400,
+			enabledPOS: true,
+			alcohol: false,
+		});
+	});
+
+	it("charges sale_price even when self_pricing disagrees with it", () => {
+		// The exact divergence: board advertises $3.00, till must still ring $4.00.
+		const normalized = normalizePosItem({ ...redBull, self_pricing: 300 });
+
+		expect(normalized.price).toBe(400);
+		expect(normalized.price).toBe(redBull.sale_price);
+	});
+
+	it("does not fall back to self_pricing when sale_price is absent", () => {
+		// sale_price is required on pos_items, so an item without one is malformed. Better it
+		// surfaces as undefined than quietly rings at a price only the menu board knows about.
+		const normalized = normalizePosItem({ $id: "item_broken", name: "Mystery", self_pricing: 300 });
+
+		expect(normalized.price).toBeUndefined();
 	});
 });

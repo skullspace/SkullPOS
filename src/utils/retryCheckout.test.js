@@ -195,3 +195,64 @@ describe("retryCheckout", () => {
 		});
 	});
 });
+
+/**
+ * P2-24. Retry took the identical branch to the first attempt, so it recomputed the same
+ * min(balance, total) split and failed the same way -- there was no path out of a giftcard sale
+ * whose remainder fell under the card minimum.
+ */
+describe("retryCheckout: giftcard remainders below the card minimum", () => {
+	beforeEach(() => jest.clearAllMocks());
+
+	test("a from-scratch giftcard retry caps the leg so the card remainder is chargeable", async () => {
+		const deps = makeDeps({
+			getPaymentMethod: jest.fn().mockReturnValue("giftcard"),
+			getGiftcard: jest.fn().mockReturnValue({ $id: "gc1", balance: 450 }),
+			getGiftcardUsage: jest.fn().mockReturnValue(null),
+			getTotal: jest.fn().mockReturnValue(488),
+		});
+		recordPayment.mockResolvedValue({ ok: true, remaining: 51 });
+		deps.handleCardPayment.mockResolvedValue({ id: "pi_1" });
+
+		createRetryCheckout(deps)();
+		await flush();
+
+		expect(recordPayment).toHaveBeenCalledWith(expect.objectContaining({ method: "giftcard", amount: 437 }));
+		expect(deps.handleCardPayment).toHaveBeenCalledWith("t1", true, 51);
+	});
+
+	test("a from-scratch giftcard retry on an unsplittable sale refuses instead of debiting the card", async () => {
+		const deps = makeDeps({
+			getPaymentMethod: jest.fn().mockReturnValue("giftcard"),
+			getGiftcard: jest.fn().mockReturnValue({ $id: "gc1", balance: 20 }),
+			getGiftcardUsage: jest.fn().mockReturnValue(null),
+			getTotal: jest.fn().mockReturnValue(40),
+		});
+
+		createRetryCheckout(deps)();
+		await flush();
+
+		expect(recordPayment).not.toHaveBeenCalled();
+		expect(deps.handleCardPayment).not.toHaveBeenCalled();
+		expect(deps.setCheckoutError).toHaveBeenCalledWith(expect.stringMatching(/card minimum/));
+		expect(deps.setTransactionInProgress).toHaveBeenLastCalledWith(false);
+	});
+
+	test("an already-applied giftcard leg is still retried at the server's own remaining amount", async () => {
+		// The cap only applies where the leg has NOT been recorded yet. Once it has, the
+		// server's `remaining` is the truth and recomputing anything would double-apply.
+		const deps = makeDeps({
+			getPaymentMethod: jest.fn().mockReturnValue("giftcard"),
+			getGiftcard: jest.fn().mockReturnValue({ $id: "gc1", balance: 0 }),
+			getGiftcardUsage: jest.fn().mockReturnValue({ applied: 437, remaining: 51 }),
+			getTotal: jest.fn().mockReturnValue(488),
+		});
+		deps.handleCardPayment.mockResolvedValue({ id: "pi_1" });
+
+		createRetryCheckout(deps)();
+		await flush();
+
+		expect(recordPayment).not.toHaveBeenCalled();
+		expect(deps.handleCardPayment).toHaveBeenCalledWith("t1", true, 51);
+	});
+});

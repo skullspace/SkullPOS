@@ -6,6 +6,7 @@ import {
 	describeCleanLegFailure,
 	derivePaymentLegs,
 } from "./splitPayment";
+import { PAYMENT_LEG_FIXTURES } from "./paymentLegs.fixtures";
 
 function makeFunctionsClient(responseBody) {
 	return { createExecution: jest.fn().mockResolvedValue({ responseBody: JSON.stringify(responseBody) }) };
@@ -216,45 +217,38 @@ describe("describeUnknownPaymentFailure", () => {
 	});
 });
 
-describe("derivePaymentLegs", () => {
-	test("uses the payments array directly when present", () => {
-		const legs = [
-			{ method: "giftcard", amount: 400, giftcardId: "gc1" },
-			{ method: "cash", amount: 600 },
-		];
-		expect(derivePaymentLegs({ payments: JSON.stringify(legs) })).toEqual(legs);
+/**
+ * Driven off the shared fixture table rather than cases written out here, because there are
+ * FIVE copies of this function (four Appwrite functions plus this client) and the client one
+ * is what the operator reads in the refund confirmation dialog while Stripe-RefundPayment's
+ * copy decides what actually reverses. A divergence between them is invisible until someone
+ * refunds the wrong amount (P2-29) -- so the case table lives in its own file, meant to be
+ * asserted identically by every copy.
+ *
+ * These cases supersede (and cover) the six that used to be spelled out here. Three of those
+ * asserted the pre-fix behaviour on fixtures with no `total` at all: they encoded the very bugs
+ * the server copies had already fixed -- a card leg taken straight from `payment_due` (so $0 on
+ * any row the retired completion path zeroed) and a cash leg synthesized only when no other leg
+ * was found (so a giftcard+card+cash remainder vanished).
+ */
+describe("derivePaymentLegs (shared fixtures)", () => {
+	test.each(PAYMENT_LEG_FIXTURES.map((f) => [f.name, f]))("%s", (_name, fixture) => {
+		expect(derivePaymentLegs(fixture.transaction)).toEqual(fixture.legs);
 	});
 
-	test("legacy fallback: giftcard + stripe combo with no payments array", () => {
-		const transaction = {
-			payments: null,
-			giftcards: ["gc1"],
-			giftcard_amount: 400,
-			stripe_id: "pi_1",
-			payment_due: 600,
-		};
-		expect(derivePaymentLegs(transaction)).toEqual([
-			{ method: "giftcard", amount: 400, giftcardId: "gc1" },
-			{ method: "stripe", amount: 600, stripeId: "pi_1" },
-		]);
-	});
-
-	test("legacy fallback: giftcard relationship stored as an expanded object", () => {
-		const transaction = { giftcards: [{ $id: "gc1", balance: 999 }], giftcard_amount: 400, payment_due: 0 };
-		expect(derivePaymentLegs(transaction)).toEqual([{ method: "giftcard", amount: 400, giftcardId: "gc1" }]);
-	});
-
-	test("legacy fallback: cash-only transaction (no giftcard, no stripe_id)", () => {
-		expect(derivePaymentLegs({ payment_due: 500 })).toEqual([{ method: "cash", amount: 500 }]);
-	});
-
-	test("malformed payments JSON falls back to legacy derivation instead of throwing", () => {
-		expect(derivePaymentLegs({ payments: "{not valid json", payment_due: 500 })).toEqual([
-			{ method: "cash", amount: 500 },
-		]);
-	});
-
-	test("an empty payments array also falls back to legacy derivation", () => {
-		expect(derivePaymentLegs({ payments: "[]", payment_due: 500 })).toEqual([{ method: "cash", amount: 500 }]);
+	test("every fixture's legs add up to the transaction total, so nothing is dropped or invented", () => {
+		// The property that actually protects the refund dialog: a legacy row's legs must
+		// account for the whole sale. Both historical bugs broke exactly this -- the zeroed
+		// card leg understated it, the missing cash leg lost the remainder.
+		for (const fixture of PAYMENT_LEG_FIXTURES) {
+			if (fixture.transaction.payments) continue; // recorded legs are authoritative, not derived
+			const summed = fixture.legs.reduce((sum, leg) => sum + leg.amount, 0);
+			const total = parseInt(fixture.transaction.total) || 0;
+			// An over-applied giftcard is the one case that legitimately exceeds the total.
+			expect(summed).toBeGreaterThanOrEqual(total);
+			if (summed !== total) {
+				expect(fixture.transaction.giftcard_amount).toBeGreaterThan(total);
+			}
+		}
 	});
 });

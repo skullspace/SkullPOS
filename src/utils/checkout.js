@@ -1,4 +1,5 @@
 import { recordPayment, describeCleanLegFailure } from "./splitPayment";
+import { planGiftcardLeg } from "./giftcard";
 import { isTestEnvironment } from "./environment";
 
 const test = isTestEnvironment;
@@ -28,11 +29,21 @@ export default function createCheckout(deps) {
 		setTransactionInProgress,
 		setCheckoutError,
 		setCashModalOpen,
+		setChangeDue,
 		handleCardPayment,
 		onSplitStarted,
 	} = deps;
 
 	return async function checkout() {
+		// Change due belongs to the sale being rung, and only the cash path ever sets it.
+		// It used to be cleared in exactly one place -- the SuccessModal's Close button --
+		// so dismissing that modal by tapping the backdrop (or pressing Escape) left the
+		// number set, and the NEXT sale's success modal showed "Change Due: $5.00" over a
+		// card payment nobody tendered cash for (P2-25). Clearing it here, at the start of
+		// every sale, is the one point every payment method passes through: cash, card,
+		// giftcard and split all create their transaction from here.
+		setChangeDue && setChangeDue(0);
+
 		setTransactionInProgress && setTransactionInProgress(true);
 
 		if (!getPaymentMethod) {
@@ -106,7 +117,20 @@ export default function createCheckout(deps) {
 					return;
 				}
 
-				const applyAmount = Math.min(parseInt(gift.balance) || 0, parseInt(getTotal ? getTotal() : 0));
+				// Not min(balance, total): a remainder of 1-50c is not chargeable on the reader
+				// and used to wedge the sale after the card had already been debited (P2-24).
+				// planGiftcardLeg caps the leg so the card remainder clears Stripe's floor, or
+				// refuses up front -- before any debit -- when no chargeable split exists.
+				const plan = planGiftcardLeg({
+					total: parseInt(getTotal ? getTotal() : 0),
+					balance: gift.balance,
+				});
+				if (!plan.ok) {
+					setCheckoutError && setCheckoutError(plan.error);
+					setTransactionInProgress && setTransactionInProgress(false);
+					return;
+				}
+				const applyAmount = plan.applyAmount;
 
 				let applyResult;
 				try {

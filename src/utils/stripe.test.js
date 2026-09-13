@@ -118,8 +118,22 @@ describe("chargeCard -> Stripe-CreatePaymentIntent request body", () => {
 		const createExecution = jest.fn();
 		const { result } = await setup({ createExecution });
 
-		await expect(result.current.chargeCard(50, false, "txn_1")).rejects.toThrow(/greater than 50 cents/);
+		// The rejection now names the amount and what to do instead of echoing the SDK's
+		// "Amount must be greater than 50 cents" at a cashier mid-sale (P2-24).
+		const rejection = result.current.chargeCard(50, false, "txn_1");
+		await expect(rejection).rejects.toThrow(/\$0\.50/);
+		await expect(rejection).rejects.toThrow(/card minimum/);
+		await expect(rejection).rejects.toThrow(/cash/);
 		expect(createExecution).not.toHaveBeenCalled();
+	});
+
+	test("51 cents -- the first chargeable amount -- is let through to the reader", async () => {
+		const createExecution = jest.fn().mockResolvedValue(intentResponse({ id: "pi_1", client_secret: "cs_1" }));
+		const terminal = collectsSuccessfully({ id: "pi_1", status: "succeeded", amount: 51 });
+		const { result } = await setup({ createExecution, terminal });
+
+		await expect(result.current.chargeCard(51, false, "txn_1")).resolves.toMatchObject({ id: "pi_1" });
+		expect(bodyOf(callsTo(createExecution, CREATE_PAYMENT_INTENT_FN)[0]).amount).toBe(51);
 	});
 });
 

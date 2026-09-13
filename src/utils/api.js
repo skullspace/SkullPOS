@@ -169,6 +169,33 @@ function createClient() {
 }
 
 /**
+ * Normalize a pos_items document to the field names the rest of the app expects (carried over
+ * from the old Items_old schema), so the migration to pos_items didn't require touching every
+ * component that reads an item.
+ *
+ * `sale_price` is the ONLY price the POS charges, on both the staff register and the
+ * self-checkout kiosk -- `price` here is what cart totals, the reader display and every receipt
+ * are computed from. pos_items also carries a `self_pricing` attribute, deliberately NOT read
+ * here: nothing in the POS or in any of the 24 Appwrite functions reads it, its only writer is
+ * SkullAdminApp's item form, and its only reader is the menu board, which aliases it to
+ * `selfcheck_price` and DISPLAYS it. Setting it therefore changes what the board advertises
+ * without changing what the till charges -- a Red Bull priced at 300 there and 400 here, with
+ * nothing to warn the operator (P2-30). Mapping it onto `price` would close that gap from the
+ * wrong end: it would silently re-price real sales off a field nobody thinks of as a POS price.
+ * One price per item, and this is it.
+ *
+ * Hoisted out of useAppwrite (it closes over nothing) so this contract is directly testable.
+ */
+export function normalizePosItem(doc) {
+	return {
+		...doc,
+		price: doc.sale_price,
+		enabledPOS: doc.enabled_pos,
+		alcohol: doc.contains_alcohol,
+	};
+}
+
+/**
  * useAppwrite Hook - Main hook for Appwrite functionality
  * 
  * Provides:
@@ -231,20 +258,6 @@ export function useAppwrite() {
 			console.error("error getting discounts", err);
 		}
 	}, [databases]);
-
-	/**
-	 * Normalize a pos_items document to the field names the rest of the app
-	 * expects (carried over from the old Items_old schema), so the migration
-	 * to pos_items didn't require touching every component that reads an item.
-	 */
-	function normalizePosItem(doc) {
-		return {
-			...doc,
-			price: doc.sale_price,
-			enabledPOS: doc.enabled_pos,
-			alcohol: doc.contains_alcohol,
-		};
-	}
 
 	/**
 	 * Fetch all items from database
