@@ -14,7 +14,11 @@
 
 import { parseActiveEventExecution, normalizePosItem, ACTIVE_EVENT_OK, ACTIVE_EVENT_UNAVAILABLE } from "./api";
 
-/** The full 12-key projection Ticketing-ActiveEvent returns for a live event. */
+/**
+ * The full projection Ticketing-ActiveEvent returns for a live event, mid-migration: the bar
+ * window in both shapes at once -- the barOpensAt/barClosesAt instants the gate now prefers,
+ * and the legacy barOpenTime/barCloseTime wall clocks it falls back to.
+ */
 const liveEvent = {
 	$id: "evt_live",
 	eventId: "zeffy-123",
@@ -28,6 +32,8 @@ const liveEvent = {
 	sellsAlcohol: true,
 	barOpenTime: "18:00",
 	barCloseTime: "02:00",
+	barOpensAt: "2026-09-11T23:00:00.000Z",
+	barClosesAt: "2026-09-12T07:00:00.000Z",
 };
 
 function completed(body, responseStatusCode = 200) {
@@ -41,12 +47,28 @@ describe("parseActiveEventExecution", () => {
 		expect(result.status).toBe(ACTIVE_EVENT_OK);
 		expect(result.error).toBeNull();
 		expect(result.event).toEqual(liveEvent);
-		// The three fields the gate actually turns on.
+		// The fields the gate actually turns on: the flag, the instants it prefers, and the
+		// legacy wall clocks it still falls back to.
 		expect(result.event.sellsAlcohol).toBe(true);
+		expect(result.event.barOpensAt).toBe("2026-09-11T23:00:00.000Z");
+		expect(result.event.barClosesAt).toBe("2026-09-12T07:00:00.000Z");
 		expect(result.event.barOpenTime).toBe("18:00");
 		expect(result.event.barCloseTime).toBe("02:00");
 		// $id is what the DJ-voucher check compares against giftcard.eventId.
 		expect(result.event.$id).toBe("evt_live");
+	});
+
+	it("passes through a row that has not been backfilled yet, untouched", () => {
+		// A deployed Ticketing-ActiveEvent that predates the instants, or an Events row the
+		// backfill has not reached, returns the legacy pair alone. Nothing here may invent,
+		// drop or normalize a field: barHours.js owns the fallback, and it needs the row as-is.
+		const { barOpensAt, barClosesAt, ...legacyOnly } = liveEvent;
+		const result = parseActiveEventExecution(completed({ event: legacyOnly }));
+
+		expect(result.status).toBe(ACTIVE_EVENT_OK);
+		expect(result.event).toEqual(legacyOnly);
+		expect("barOpensAt" in result.event).toBe(false);
+		expect(result.event.barOpenTime).toBe("18:00");
 	});
 
 	it("does not coerce a legitimately free event's 0-cent price", () => {

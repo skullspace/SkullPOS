@@ -310,8 +310,14 @@ export function useAppwrite() {
 	/**
 	 * Fetches the currently active event (isActive:true), if any -- used to gate the bar
 	 * menu's alcohol display on whether alcohol is actually being sold right now, per the
-	 * event's own sellsAlcohol flag and barOpenTime/barCloseTime window (set via the admin
-	 * app's Events screen), and to scope DJ vouchers to their own event.
+	 * event's own sellsAlcohol flag and its bar window (set via the admin app's Events
+	 * screen), and to scope DJ vouchers to their own event.
+	 *
+	 * The window arrives in two shapes during the timestamp migration: barOpensAt/barClosesAt
+	 * (full instants, preferred) and the legacy barOpenTime/barCloseTime wall clocks. Both are
+	 * passed straight through to isWithinBarHours, which prefers the instants and falls back --
+	 * nothing is filtered here, deliberately, so a row backfilled before this build ships still
+	 * reaches the gate. See utils/barHours.js.
 	 *
 	 * This goes through Ticketing-ActiveEvent rather than reading the Events collection
 	 * directly: Events is readable by the admin team only, while the register runs on an
