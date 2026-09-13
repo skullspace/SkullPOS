@@ -122,7 +122,7 @@ export function resolveAlcoholGate({ activeEventState, alcoholOverride, now }) {
 	// Anything that isn't an explicit on/off -- including an omitted argument -- is unknown.
 	const overrideUnknown = !overrideOn && alcoholOverride !== ALCOHOL_OVERRIDE_OFF;
 
-	// A Ticketing-ActiveEvent build that predates the sellsAlcohol/barOpenTime/barCloseTime
+	// A Ticketing-ActiveEvent build that predates the sellsAlcohol/barOpensAt/barClosesAt
 	// allowlist returns a perfectly valid 200 with those fields simply absent. isWithinBarHours
 	// then reads undefined as false and alcohol stays hidden -- but the gate would call itself
 	// KNOWN, arm the cart-stripping effect, and fire no banner. An event document with no

@@ -15,9 +15,10 @@
 import { parseActiveEventExecution, normalizePosItem, ACTIVE_EVENT_OK, ACTIVE_EVENT_UNAVAILABLE } from "./api";
 
 /**
- * The full projection Ticketing-ActiveEvent returns for a live event, mid-migration: the bar
- * window in both shapes at once -- the barOpensAt/barClosesAt instants the gate now prefers,
- * and the legacy barOpenTime/barCloseTime wall clocks it falls back to.
+ * The projection Ticketing-ActiveEvent returns for a live event: the bar window as the
+ * barOpensAt/barClosesAt instants, which are now the only shape the gate reads. The retired
+ * barOpenTime/barCloseTime wall clocks are deliberately absent -- see the pass-through test
+ * below for what happens when a function build sends them anyway.
  */
 const liveEvent = {
 	$id: "evt_live",
@@ -30,8 +31,6 @@ const liveEvent = {
 	currency: "CAD",
 	isActive: true,
 	sellsAlcohol: true,
-	barOpenTime: "18:00",
-	barCloseTime: "02:00",
 	barOpensAt: "2026-09-11T23:00:00.000Z",
 	barClosesAt: "2026-09-12T07:00:00.000Z",
 };
@@ -47,28 +46,41 @@ describe("parseActiveEventExecution", () => {
 		expect(result.status).toBe(ACTIVE_EVENT_OK);
 		expect(result.error).toBeNull();
 		expect(result.event).toEqual(liveEvent);
-		// The fields the gate actually turns on: the flag, the instants it prefers, and the
-		// legacy wall clocks it still falls back to.
+		// The three fields the gate actually turns on: the flag and the instant pair.
 		expect(result.event.sellsAlcohol).toBe(true);
 		expect(result.event.barOpensAt).toBe("2026-09-11T23:00:00.000Z");
 		expect(result.event.barClosesAt).toBe("2026-09-12T07:00:00.000Z");
-		expect(result.event.barOpenTime).toBe("18:00");
-		expect(result.event.barCloseTime).toBe("02:00");
 		// $id is what the DJ-voucher check compares against giftcard.eventId.
 		expect(result.event.$id).toBe("evt_live");
 	});
 
-	it("passes through a row that has not been backfilled yet, untouched", () => {
-		// A deployed Ticketing-ActiveEvent that predates the instants, or an Events row the
-		// backfill has not reached, returns the legacy pair alone. Nothing here may invent,
-		// drop or normalize a field: barHours.js owns the fallback, and it needs the row as-is.
-		const { barOpensAt, barClosesAt, ...legacyOnly } = liveEvent;
-		const result = parseActiveEventExecution(completed({ event: legacyOnly }));
+	it("never invents a bar window for an event that arrived without one", () => {
+		// An Events row whose bar hours were never filled in, or a projection that stopped
+		// sending them. The temptation this pins shut is defaulting the missing pair to
+		// something here -- the gate is built to fail closed on an absent window, and it can
+		// only do that if the absence survives the trip through this function intact.
+		const { barOpensAt, barClosesAt, ...noWindow } = liveEvent;
+		const result = parseActiveEventExecution(completed({ event: noWindow }));
 
 		expect(result.status).toBe(ACTIVE_EVENT_OK);
-		expect(result.event).toEqual(legacyOnly);
+		expect(result.event).toEqual(noWindow);
 		expect("barOpensAt" in result.event).toBe(false);
-		expect(result.event.barOpenTime).toBe("18:00");
+		expect("barClosesAt" in result.event).toBe(false);
+	});
+
+	it("carries a retired field through untouched rather than stripping it", () => {
+		// Readers stop reading before the schema drops, so for a window of time the deployed
+		// function may still project barOpenTime/barCloseTime at a register that no longer looks
+		// at them. Filtering them out here would be busywork with a sharp edge: this layer would
+		// have to know the field list, and would then be a second place to update every time the
+		// projection changes. It passes the payload through; barHours.js decides what counts.
+		const stillProjectsWallClocks = { ...liveEvent, barOpenTime: "18:00", barCloseTime: "02:00" };
+		const result = parseActiveEventExecution(completed({ event: stillProjectsWallClocks }));
+
+		expect(result.status).toBe(ACTIVE_EVENT_OK);
+		expect(result.event).toEqual(stillProjectsWallClocks);
+		// ...and the instants the gate does read are untouched alongside them.
+		expect(result.event.barOpensAt).toBe("2026-09-11T23:00:00.000Z");
 	});
 
 	it("does not coerce a legitimately free event's 0-cent price", () => {

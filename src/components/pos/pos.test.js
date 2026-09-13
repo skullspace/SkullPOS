@@ -32,12 +32,17 @@ const duringBarHours = new Date(2026, 8, 11, 21, 0);
 // 15:00 -- same event, before the bar opens.
 const beforeBarHours = new Date(2026, 8, 11, 15, 0);
 
+/**
+ * The bar window as the register now reads it: the barOpensAt/barClosesAt instants alone. Both
+ * are built from a LOCAL Date and serialized, so the fixture means the same 18:00->02:00 the two
+ * clocks above do whichever zone the test machine runs in.
+ */
 const openEvent = {
 	$id: "evt_live",
 	name: "Friday Night",
 	sellsAlcohol: true,
-	barOpenTime: "18:00",
-	barCloseTime: "02:00",
+	barOpensAt: new Date(2026, 8, 11, 18, 0).toISOString(),
+	barClosesAt: new Date(2026, 8, 12, 2, 0).toISOString(),
 };
 
 function gate(activeEventState, { alcoholOverride = ALCOHOL_OVERRIDE_OFF, now = duringBarHours } = {}) {
@@ -152,8 +157,8 @@ describe("resolveAlcoholGate", () => {
 	});
 
 	describe("an event service that doesn't report the alcohol fields", () => {
-		// A deployed Ticketing-ActiveEvent that predates the sellsAlcohol/barOpenTime/
-		// barCloseTime allowlist returns a valid 200 with those fields simply missing.
+		// A deployed Ticketing-ActiveEvent that predates the sellsAlcohol/barOpensAt/
+		// barClosesAt allowlist returns a valid 200 with those fields simply missing.
 		const staleEvent = { $id: "evt_live", name: "Friday Night" };
 
 		it("is treated as no answer at all, not as 'no alcohol tonight'", () => {

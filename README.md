@@ -186,8 +186,12 @@ Alcohol shows on the register grid only when **all** of these hold:
 
 1. `Ticketing-ActiveEvent` answered, and there is an event running.
 2. That event has `sellsAlcohol: true`.
-3. Now is inside `barOpenTime`–`barCloseTime` (`"HH:mm"`; a close earlier than the open means
-   overnight, e.g. `18:00`–`02:00`). Set on the admin app's Events screen.
+3. Now is inside `barOpensAt`–`barClosesAt` — two full ISO-8601 instants, so an overnight window
+   is just a close that carries the next day and nothing has to infer one. Set on the admin
+   app's Events screen. The register used to fall back to the legacy `barOpenTime`/`barCloseTime`
+   `"HH:mm"` strings when the instants were missing; it no longer reads them at all, because
+   those two attributes are being deleted from the Events schema. An event that reaches the till
+   without a usable instant pair now hides alcohol rather than selling on a wall clock.
 4. The admin kill switch is off — the `alcohol_override_disabled` row in the `barData`/`config`
    collection is absent or one of `""`/`false`/`0`/`no`/`off`. Anything else engages it.
 5. The local "Hide alcohol items" toggle in the hamburger menu is off. That one is per-device,

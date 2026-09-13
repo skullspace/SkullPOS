@@ -61,12 +61,17 @@ const items = [
 	{ $id: "item_lager", name: "Lager", price: 700, categories: "cat_beer", enabledPOS: true },
 ];
 
+/**
+ * An 18:00->02:00 bar window as the barOpensAt/barClosesAt instants -- the only shape the gate
+ * reads. Both are built from a LOCAL Date and serialized so the window straddles the fake system
+ * time set below (21:00 local) on any test machine, not just one sitting in the venue's zone.
+ */
 const openEvent = {
 	$id: "evt_live",
 	name: "Friday Night",
 	sellsAlcohol: true,
-	barOpenTime: "18:00",
-	barCloseTime: "02:00",
+	barOpensAt: new Date(2026, 8, 11, 18, 0).toISOString(),
+	barClosesAt: new Date(2026, 8, 12, 2, 0).toISOString(),
 };
 
 const okLive = { status: ACTIVE_EVENT_OK, event: openEvent, error: null };
@@ -309,8 +314,8 @@ describe("POS alcohol gate", () => {
 	});
 
 	it("hides alcohol when the event service answers without the bar-hours fields", async () => {
-		// A deployed Ticketing-ActiveEvent that predates the sellsAlcohol/barOpenTime/
-		// barCloseTime allowlist. Alcohol hid either way -- but silently, with the gate calling
+		// A deployed Ticketing-ActiveEvent that predates the sellsAlcohol/barOpensAt/
+		// barClosesAt allowlist. Alcohol hid either way -- but silently, with the gate calling
 		// itself authoritative, so the cart-stripping effect was armed and no banner fired.
 		await renderPOS({
 			initialResult: { status: ACTIVE_EVENT_OK, event: { $id: "evt_live", name: "Friday Night" }, error: null },

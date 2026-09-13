@@ -313,11 +313,14 @@ export function useAppwrite() {
 	 * event's own sellsAlcohol flag and its bar window (set via the admin app's Events
 	 * screen), and to scope DJ vouchers to their own event.
 	 *
-	 * The window arrives in two shapes during the timestamp migration: barOpensAt/barClosesAt
-	 * (full instants, preferred) and the legacy barOpenTime/barCloseTime wall clocks. Both are
-	 * passed straight through to isWithinBarHours, which prefers the instants and falls back --
-	 * nothing is filtered here, deliberately, so a row backfilled before this build ships still
-	 * reaches the gate. See utils/barHours.js.
+	 * The window arrives as the barOpensAt/barClosesAt instants and is handed to isWithinBarHours
+	 * exactly as the function sent it. Nothing is filtered, reshaped or defaulted on the way past,
+	 * deliberately: this layer's job is deciding whether the server ANSWERED, not what the answer
+	 * means, and a field invented here (or quietly dropped here) would be a bar window nobody
+	 * wrote. The register no longer reads the legacy barOpenTime/barCloseTime wall clocks at all,
+	 * so whether the projection still carries them is now the gate's business in neither
+	 * direction -- an event that reaches the till without a usable instant pair hides alcohol.
+	 * See utils/barHours.js.
 	 *
 	 * This goes through Ticketing-ActiveEvent rather than reading the Events collection
 	 * directly: Events is readable by the admin team only, while the register runs on an
