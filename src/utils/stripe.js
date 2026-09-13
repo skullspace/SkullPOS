@@ -4,6 +4,7 @@ import { loadStripeTerminal } from "@stripe/terminal-js";
 import { isTestEnvironment } from "./environment";
 import { STRIPE_MIN_CHARGE_CENTS } from "./giftcard";
 import { formatCAD } from "./format";
+import { executeWithOneRetry } from "./retryExecution";
 
 const test = isTestEnvironment;
 
@@ -193,14 +194,23 @@ export function useStripe() {
 
 			let data;
 			try {
-				const response = await functions.createExecution({
-					functionId: "68f3c860003da00f14d8",
-					body: JSON.stringify({
-						test: test ? "test" : "",
-						amount: parseInt(amountCents),
-						transactionId,
-					}),
-				});
+				// Retried once if the executor accepts the request and then never runs it -- a
+				// measured few-percent failure on this install that otherwise costs the sale.
+				// Safe ONLY because the function sends a Stripe idempotencyKey derived from
+				// transactionId, so the second attempt returns the SAME intent instead of
+				// minting a second one for the same sale.
+				const response = await executeWithOneRetry(
+					() =>
+						functions.createExecution({
+							functionId: "68f3c860003da00f14d8",
+							body: JSON.stringify({
+								test: test ? "test" : "",
+								amount: parseInt(amountCents),
+								transactionId,
+							}),
+						}),
+					{ onRetry: (why) => console.warn("Retrying Stripe intent:", why) },
+				);
 				data = JSON.parse(response.responseBody || "{}");
 			} catch (error) {
 				console.error("Error generating Stripe intent:", error);
